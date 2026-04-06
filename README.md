@@ -11,7 +11,7 @@
 ## What It Does
 
 ### Beat-Locked Timeline Sync
-Your Blender playhead follows the DAW — perfectly. MIDI Clock, Start/Stop/Continue, and Song Position Pointer keep everything in frame-accurate lockstep. Scrub Blender and the DAW follows. Press Play in FL Studio and Blender rolls. It just works.
+Your Blender playhead follows the DAW — perfectly. MIDI Clock, Start/Stop/Continue, and Song Position Pointer keep everything in frame-accurate lockstep. Scrub the DAW and Blender follows. Press Play in FL Studio and Blender rolls. It just works.
 
 ### Live FX Rack — MIDI-Driven Visual Control
 Map any knob, fader, or pad to any visual parameter. Fourteen built-in FX types let you tear through the mix:
