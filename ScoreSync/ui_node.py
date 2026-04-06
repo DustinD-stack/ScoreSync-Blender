@@ -18,11 +18,17 @@ from .ui_panel import _draw_fx_rack, _draw_mapping, _draw_sampler
 
 # ── Poll helper ───────────────────────────────────────────────────────────────
 
+def _is_node_editor(context):
+    """Show ScoreSync tab whenever any Node Editor is open."""
+    sd = getattr(context, "space_data", None)
+    return sd is not None and sd.type == 'NODE_EDITOR'
+
+
 def _is_shader_editor(context):
     sd = getattr(context, "space_data", None)
     return (sd is not None
             and sd.type == 'NODE_EDITOR'
-            and sd.tree_type == 'ShaderNodeTree')
+            and getattr(sd, 'tree_type', '') == 'ShaderNodeTree')
 
 
 def _active_material(context):
@@ -46,7 +52,7 @@ class SCORESYNC_PT_node_main(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return _is_shader_editor(context)
+        return _is_node_editor(context)
 
     def draw(self, context):
         layout = self.layout
@@ -90,7 +96,7 @@ class SCORESYNC_PT_node_transport(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return _is_shader_editor(context)
+        return _is_node_editor(context)
 
     def draw(self, context):
         layout = self.layout
@@ -129,11 +135,15 @@ class SCORESYNC_PT_node_chain(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return _is_shader_editor(context)
+        return _is_node_editor(context)
 
     def draw(self, context):
         layout = self.layout
         mat    = _active_material(context)
+
+        if not _is_shader_editor(context):
+            layout.label(text="Open a Shader / Material node tree to use FX.", icon='INFO')
+            return
 
         if not mat:
             layout.label(text="No material on active object.", icon='INFO')
@@ -215,12 +225,16 @@ class SCORESYNC_PT_node_fx(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return _is_shader_editor(context)
+        return _is_node_editor(context)
 
     def draw(self, context):
         layout = self.layout
         scene  = context.scene
         mat    = _active_material(context)
+
+        if not _is_shader_editor(context):
+            layout.label(text="Open a Shader node tree to use Material FX.", icon='INFO')
+            return
 
         if mat:
             layout.label(text=f"Driving: {mat.name}", icon='MATERIAL')
@@ -246,7 +260,7 @@ class SCORESYNC_PT_node_sampler(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return _is_shader_editor(context)
+        return _is_node_editor(context)
 
     def draw(self, context):
         layout = self.layout
@@ -274,7 +288,7 @@ class SCORESYNC_PT_node_mapping(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return _is_shader_editor(context)
+        return _is_node_editor(context)
 
     def draw(self, context):
         _draw_mapping(self.layout, context.scene, compact=False)
