@@ -11,7 +11,7 @@
 ## What It Does
 
 ### Beat-Locked Timeline Sync
-Your Blender playhead follows the DAW — perfectly. MIDI Clock, Start/Stop/Continue, and Song Position Pointer keep everything in frame-accurate lockstep. Scrub the DAW and Blender follows. Press Play in FL Studio and Blender rolls. It just works.
+Your Blender playhead follows the DAW — perfectly. MIDI Clock, Start/Stop/Continue, and Song Position Pointer keep everything in frame-accurate lockstep. Scrub the DAW and Blender follows. Press Play in DAW and Blender rolls. It just works.
 
 ### Live FX Rack — MIDI-Driven Visual Control
 Map any knob, fader, or pad to any visual parameter. Fourteen built-in FX types let you tear through the mix:
@@ -27,7 +27,7 @@ Map any knob, fader, or pad to any visual parameter. Fourteen built-in FX types 
 
 Four trigger modes: **CC** (knob sweep), **Momentary** (dead-man hold), **Toggle** (latch), **Flash** (beat-reactive decay). Turn a pad into a strobe. Wire a fader to opacity. Make your visuals breathe.
 
-### Visual Sampler — MPC-Style Pad Banks
+### Visual Sampler — 16 grid-Style Pad Banks
 Load video clips, image sequences, or rendered frame ranges into 4×4 pad banks. Trigger them from MIDI notes — they drop straight into the VSE or swap material textures on the fly. Stack multiple banks and switch between them with MIDI Program Change. Your setlist, your banks.
 
 - Load from file or sample directly from the Blender timeline
@@ -49,7 +49,7 @@ ScoreSync lives in every editor you work from:
 
 One-click buttons jump between editors without breaking your flow.
 
-### FL Studio Mode + Hardware Mode
+### DAW Mode + Hardware Mode
 **FL Studio Mode** gives you full duplex, script health checks, and transport negotiation. **Hardware Mode** strips it back for standalone MIDI sequencers — MPC, Elektron, Roland MC-series. One click to switch.
 
 ---
