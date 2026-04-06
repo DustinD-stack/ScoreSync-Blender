@@ -355,6 +355,15 @@ class SCORESYNC_PT_main(bpy.types.Panel):
             row.operator("scoresync.hardware_mode_apply",
                          icon='PACKAGE',  text="Hardware Mode →")
 
+        # Quick editor jump
+        row = layout.row(align=True)
+        op_vse = row.operator("scoresync.open_area", icon='SEQUENCE',
+                              text="→ Video Editor")
+        op_vse.editor_type = 'SEQUENCE_EDITOR'
+        op_node = row.operator("scoresync.open_area", icon='NODE',
+                               text="→ Shader Editor")
+        op_node.editor_type = 'NODE_EDITOR'
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONNECTION & SETUP WIZARD
@@ -550,7 +559,33 @@ class SCORESYNC_PT_sampler(bpy.types.Panel):
     bl_options     = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
-        _draw_sampler(self.layout, context.scene)
+        layout = self.layout
+        scene  = context.scene
+
+        # ── Active VSE strip mini-view (so you stay in 3D while monitoring) ──
+        seq = getattr(scene, "sequence_editor", None)
+        strip = seq.active_strip if seq else None
+        if strip:
+            box = layout.box()
+            row = box.row(align=True)
+            row.label(text=strip.name, icon='SEQUENCE')
+            row.label(text=f"Ch {strip.channel}  [{strip.frame_final_start}–{strip.frame_final_end}]")
+            col = box.column(align=True)
+            col.prop(strip, "blend_alpha",      text="Opacity")
+            col.prop(strip, "color_multiply",   text="Bright Mult")
+            col.prop(strip, "color_saturation", text="Saturation")
+            op = box.operator("scoresync.open_area", icon='SEQUENCE',
+                              text="Edit in Video Editor")
+            op.editor_type = 'SEQUENCE_EDITOR'
+        else:
+            row = layout.row(align=True)
+            row.label(text="No active VSE strip", icon='INFO')
+            op = row.operator("scoresync.open_area", icon='SEQUENCE',
+                              text="Open Video Editor")
+            op.editor_type = 'SEQUENCE_EDITOR'
+
+        layout.separator(factor=0.3)
+        _draw_sampler(layout, scene)
 
 
 # ════════════════════════════════════════════════════════════════════════════

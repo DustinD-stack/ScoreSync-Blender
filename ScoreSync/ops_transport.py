@@ -1,6 +1,25 @@
 import bpy, time
 from .ops_connection import _get_mido, DEV, _get_bpm, _claim_blender_master, _log_event
 
+
+# ── Viewport navigation ───────────────────────────────────────────────────────
+
+class SCORESYNC_OT_open_area(bpy.types.Operator):
+    """Switch the current editor area to a different type (e.g. VSE ↔ 3D View)."""
+    bl_idname  = "scoresync.open_area"
+    bl_label   = "Switch Editor Area"
+    bl_options = {'REGISTER'}
+
+    editor_type: bpy.props.StringProperty(
+        name="Editor Type",
+        description="Blender area type to switch to (e.g. SEQUENCE_EDITOR, VIEW_3D)",
+        default="SEQUENCE_EDITOR",
+    )
+
+    def execute(self, context):
+        context.area.type = self.editor_type
+        return {'FINISHED'}
+
 _TX_LOCK_S = 0.35   # seconds to ignore incoming transport after an outbound send
 
 def _arm_tx_lock():

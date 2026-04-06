@@ -73,6 +73,15 @@ class SCORESYNC_PT_vse_main(bpy.types.Panel):
         row.operator("scoresync.tx_stop",  icon='PAUSE', text="Stop")
         row.operator("scoresync.tx_locate_to_timeline", icon='TIME', text="Locate")
 
+        # Quick editor jump
+        row = layout.row(align=True)
+        op_v3d = row.operator("scoresync.open_area", icon='VIEW3D',
+                              text="→ 3D View")
+        op_v3d.editor_type = 'VIEW_3D'
+        op_node = row.operator("scoresync.open_area", icon='NODE',
+                               text="→ Shader Editor")
+        op_node.editor_type = 'NODE_EDITOR'
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # ACTIVE STRIP FX INSPECTOR
@@ -211,7 +220,7 @@ class SCORESYNC_PT_vse_sampler(bpy.types.Panel):
             text="Pads insert strips at the current frame.",
             icon='INFO',
         )
-        _draw_sampler(layout, scene, compact=True)
+        _draw_sampler(layout, scene, compact=False)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -229,7 +238,7 @@ class SCORESYNC_PT_vse_mapping(bpy.types.Panel):
 
     def draw(self, context):
         from .ui_panel import _draw_mapping
-        _draw_mapping(self.layout, context.scene, compact=True)
+        _draw_mapping(self.layout, context.scene, compact=False)
 
 
 # ── Registration list ─────────────────────────────────────────────────────────

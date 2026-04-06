@@ -1,98 +1,176 @@
 # ScoreSync
 
-**Sync Blender's timeline to FL Studio (or any DAW) over MIDI.**
+### Turn Blender into a Live Visual Instrument
 
-ScoreSync is a Blender addon that listens to MIDI clock, transport, and Song
-Position Pointer (SPP) messages from your DAW and keeps Blender's playhead in
-sync — in real time. It also lets Blender push position back to the DAW when
-you scrub the Blender timeline.
+**ScoreSync** bridges your DAW and Blender in real time — lock your timeline to the beat, shred visual FX with MIDI knobs and pads, trigger video clips like an MPC, and paint shaders live with your controller. Whether you're VJing a concert, scoring a short film, or building a reactive music video, ScoreSync makes Blender feel like it was always part of your rig.
+
+> **Works with FL Studio, any DAW, MPC, Elektron, Roland MC-series, or standalone MIDI hardware.**
 
 ---
 
-## Features
+## What It Does
 
-- **FL → Blender:** follow MIDI clock, Start/Stop/Continue, SPP locate
-- **Blender → FL (Duplex Assist):** scrubbing Blender nudges the DAW when stopped
-- **Auto Master switching:** FL leads while playing; Blender takes over on scrub
-- **BPM estimation** from MIDI clock (EMA smoothed) + manual override
-- **MTC scrub** option (quarter-frame bursts while dragging)
-- **Health check:** probe/ACK handshake confirms FL script is loaded
-- **Presets:** FL Follow / Blender Assist / Auto Master (one click)
-- **Auto-reconnect** on port loss + auto-restore ports on startup
-- **Diagnostics:** Snapshot to console, event log export
+### Beat-Locked Timeline Sync
+Your Blender playhead follows the DAW — perfectly. MIDI Clock, Start/Stop/Continue, and Song Position Pointer keep everything in frame-accurate lockstep. Scrub Blender and the DAW follows. Press Play in FL Studio and Blender rolls. It just works.
+
+### Live FX Rack — MIDI-Driven Visual Control
+Map any knob, fader, or pad to any visual parameter. Fourteen built-in FX types let you tear through the mix:
+
+| FX | What It Hits |
+|---|---|
+| Opacity / Bright Mult / Saturation | VSE strip blend controls |
+| Brightness / Contrast | BRIGHT_CONTRAST modifier |
+| Tint R / Tint G / Tint B | Per-channel COLOR_BALANCE |
+| Mat Hue / Saturation / Value | ScoreSync HSV shader node |
+| Mat Brightness / Contrast | ScoreSync BC shader node |
+| Mat Opacity / Emission | Principled BSDF direct control |
+
+Four trigger modes: **CC** (knob sweep), **Momentary** (dead-man hold), **Toggle** (latch), **Flash** (beat-reactive decay). Turn a pad into a strobe. Wire a fader to opacity. Make your visuals breathe.
+
+### Visual Sampler — MPC-Style Pad Banks
+Load video clips, image sequences, or rendered frame ranges into 4×4 pad banks. Trigger them from MIDI notes — they drop straight into the VSE or swap material textures on the fly. Stack multiple banks and switch between them with MIDI Program Change. Your setlist, your banks.
+
+- Load from file or sample directly from the Blender timeline
+- VSE output, Material output, or both simultaneously
+- Velocity → Alpha for expressive dynamics
+- Export / Import banks as JSON — carry your setup anywhere
+
+### MIDI Mapping Layer — Control Anything
+Map any MIDI CC or Note to any Blender property — object transforms, camera FOV, particle density, custom properties, anything the RNA path can reach. Learn mode captures in one move. Preset templates drop Camera, Active Object, or Scene mappings instantly.
+
+### Multi-Editor Panels
+ScoreSync lives in every editor you work from:
+
+| Editor | What You Get |
+|---|---|
+| **3D Viewport** | Full suite — connection, transport, sampler, FX, mapping, diagnostics |
+| **Video Sequence Editor** | Strip FX inspector with live MIDI bars, sampler pads, FX rack |
+| **Shader / Node Editor** | Material FX chain setup, live HSV/BC sliders, sampler, mapping |
+
+One-click buttons jump between editors without breaking your flow.
+
+### FL Studio Mode + Hardware Mode
+**FL Studio Mode** gives you full duplex, script health checks, and transport negotiation. **Hardware Mode** strips it back for standalone MIDI sequencers — MPC, Elektron, Roland MC-series. One click to switch.
 
 ---
 
 ## Requirements
 
-- Blender 4.2+
-- FL Studio (any modern version)
-- [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html) (Windows virtual MIDI ports)
+| | |
+|---|---|
+| Blender | 4.2 LTS or newer |
+| DAW | FL Studio (any modern version) or any MIDI clock source |
+| Virtual ports | [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html) (Windows) |
+| Hardware mode | Any MIDI device that sends clock + note/CC |
 
 ---
 
-## Quick start
-
-1. Create two loopMIDI ports: `ScoreSync_F2B` and `ScoreSync_B2F`
-2. Install the addon zip in Blender
-3. In the ScoreSync panel: Install deps → Refresh → select ports → Connect
-4. In FL Studio: enable Output `ScoreSync_F2B` with SYNC, Input `ScoreSync_B2F` with ScoreSync script
-5. Press Play in FL — Blender follows
-
-See [docs/SETUP.md](docs/SETUP.md) for the full guide.
-
----
-
-## MIDI routing
+## Quick Start
 
 ```
-FL Studio  ──[ScoreSync_F2B]──►  Blender   (clock, transport, SPP)
-Blender    ──[ScoreSync_B2F]──►  FL Studio (SPP locate, transport buttons)
+1. Create two loopMIDI ports:  ScoreSync_F2B  and  ScoreSync_B2F
+2. Install the addon zip in Blender (Edit → Preferences → Add-ons → Install)
+3. 3D Viewport → N-panel → ScoreSync → Connection → Install deps
+4. Refresh ports, select In (F2B) and Out (B2F), click (Re)Connect
+5. In FL Studio: Output = ScoreSync_F2B (SYNC on), Input = ScoreSync_B2F + ScoreSync script
+6. Press Play in FL Studio — Blender locks in
 ```
 
-**Critical:** `ScoreSync_F2B` must be **disabled** as an FL input or FL will
-echo its own transport back, causing a start/stop feedback loop.
+Full setup walkthrough: [ScoreSync/docs/WALKTHROUGH.md](ScoreSync/docs/WALKTHROUGH.md)  
+Troubleshooting: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
 ---
 
-## File structure
+## MIDI Routing
+
+```
+FL Studio ──[ScoreSync_F2B]──► Blender   (clock · transport · SPP · CC · notes)
+Blender   ──[ScoreSync_B2F]──► FL Studio (SPP locate · transport · duplex scrub)
+```
+
+> **Critical:** `ScoreSync_F2B` must be **disabled** as an FL MIDI Input or FL will echo transport back and trigger a start/stop loop.
+
+---
+
+## File Structure
 
 ```
 ScoreSync/
-├── __init__.py          # Registration, properties
-├── ui_panel.py          # All UI panels
-├── ops_connection.py    # MIDI I/O threads, queue, apply, LED
-├── ops_transport.py     # Play/Stop/Locate operators (Blender → DAW)
-├── ops_duplex.py        # Duplex Assist scrub → SPP/MTC
-├── ops_markers.py       # Timeline marker tools
-├── ops_diagnostics.py   # Port list, log export, presets, FL script export
-├── ops_health.py        # FL script probe/ACK
-├── prefs.py             # AddonPreferences + preset definitions
-├── deps/                # Dependency installer
+├── __init__.py           Registration, scene properties
+├── ops_connection.py     MIDI I/O threads, clock engine, apply loop, LED
+├── ops_transport.py      Play / Stop / Locate operators, viewport navigation
+├── ops_duplex.py         Duplex Assist — scrub sends SPP/MTC to DAW
+├── ops_fx.py             FX Rack — 14 FX types, 4 trigger modes, learn engine
+├── ops_mapping.py        MIDI Mapping layer — learn, apply, presets
+├── ops_sampler.py        Visual Sampler — pad banks, cache, trigger engine
+├── ops_markers.py        Timeline marker tools
+├── ops_diagnostics.py    Port list, log export, presets, FL script export
+├── ops_health.py         FL script probe/ACK handshake
+├── prefs.py              AddonPreferences + preset definitions
+├── ui_panel.py           3D Viewport N-panel (9 collapsible sub-panels)
+├── ui_vse.py             Video Sequence Editor N-panel
+├── ui_node.py            Shader / Node Editor N-panel
+├── deps/                 Bundled mido + python-rtmidi wheels
 ├── flstudio/
-│   └── device_ScoreSync.py   # Bundled FL controller script
+│   └── device_ScoreSync.py   FL Studio MIDI controller script
+├── docs/
+│   └── WALKTHROUGH.md        Full feature walkthrough
 └── examples/
     └── scoresync_demo.blend
-
-device_ScoreSync.py      # Root copy (used by deploy.py)
-deploy.py                # Dev helper: copies files to install locations / builds zip
-docs/
-├── SETUP.md
-└── TROUBLESHOOTING.md
 ```
 
 ---
 
-## Development — deploy to Blender + FL
+## Live VJ Workflow Example
+
+```
+1. Load clips into sampler banks — one bank per song section
+2. Add Opacity FX slot per VSE channel, bind each to a fader
+3. Add Flash Opacity slot on all channels, bind to a kick-drum note
+4. Enable PC → Bank Switch — Program Change follows your song structure
+5. Hit Play in FL — Blender locks in, pads fire, faders blend, FX breathe
+```
+
+---
+
+## Feedback, Bug Reports & Feature Requests
+
+ScoreSync is actively developed and your input shapes what gets built next.
+
+**Found a bug? Got a feature idea? Something not clicking?**
+
+👉 **[Open an Issue on GitHub](https://github.com/DustinD-stack/ScoreSync-Blender/issues)**
+
+When filing a bug report, please include:
+- Blender version + OS
+- What you did, what you expected, what happened instead
+- The console output (Diagnostics → Snapshot is helpful)
+
+**Feature requests are welcome** — especially around new controller types, additional FX targets, or DAW integrations beyond FL Studio. Vote on existing requests with a 👍 to help prioritize the roadmap.
+
+---
+
+## Roadmap Highlights
+
+- [ ] Geometry Nodes parameter mapping
+- [ ] OSC input (Ableton, TouchOSC, etc.)
+- [ ] Clip launcher grid with loop controls
+- [ ] MIDI output from timeline markers
+- [ ] Preset library with shareable bank/mapping packs
+- [ ] Mac / Linux testing + cross-platform virtual port support
+
+---
+
+## Development
 
 ```bash
-# Copy addon to Blender addons folder and FL script to Hardware folder
+# Deploy to Blender addons folder + FL Studio hardware folder
 python deploy.py
 
-# Build distributable zip only
+# Build distributable zip
 python deploy.py --zip
 
-# Preview what would be copied without doing anything
+# Dry run (preview without copying)
 python deploy.py --dry-run
 ```
 
@@ -102,4 +180,6 @@ python deploy.py --dry-run
 
 MIT — see [LICENSE.txt](LICENSE.txt)
 
-Author: Dustin Douglas
+**Author:** Dustin Douglas  
+**Version:** 2.0.0  
+**Blender:** 4.2 LTS+

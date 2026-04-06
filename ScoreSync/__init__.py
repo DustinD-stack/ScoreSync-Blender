@@ -56,6 +56,7 @@ from .ops_transport import (
     SCORESYNC_OT_play,
     SCORESYNC_OT_stop,
     SCORESYNC_OT_locate_to_timeline,
+    SCORESYNC_OT_open_area,
 )
 
 from .ops_markers import (
@@ -438,6 +439,7 @@ classes = (
     SCORESYNC_OT_play,
     SCORESYNC_OT_stop,
     SCORESYNC_OT_locate_to_timeline,
+    SCORESYNC_OT_open_area,
     SCORESYNC_OT_drop_preset_marker,
     SCORESYNC_OT_jump_prev_marker,
     SCORESYNC_OT_jump_next_marker,
