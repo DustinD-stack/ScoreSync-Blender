@@ -128,7 +128,22 @@ print("    Done")
 
 # ── 5. Save ───────────────────────────────────────────────────────────────────
 print("\n[5] Saving demo blend...")
-demo_path = os.path.join(os.path.dirname(__file__), "scoresync_demo.blend")
+
+# Resolve save path from the addon's installed location — __file__ is unreliable
+# in the Scripting editor, so we find ScoreSync's actual path via addon_utils.
+import addon_utils, inspect
+ss_mod = next(
+    (m for m in addon_utils.modules() if m.__name__ == 'ScoreSync'), None
+)
+if ss_mod:
+    addon_dir   = os.path.dirname(inspect.getfile(ss_mod))
+    demo_path   = os.path.join(addon_dir, "examples", "scoresync_demo.blend")
+else:
+    # Fallback: save to user's Desktop
+    demo_path = os.path.join(os.path.expanduser("~"), "Desktop", "scoresync_demo.blend")
+    print(f"    (ScoreSync module not found — saving to Desktop)")
+
+os.makedirs(os.path.dirname(demo_path), exist_ok=True)
 bpy.ops.wm.save_as_mainfile(filepath=demo_path, copy=True)
 print(f"    Saved: {demo_path}")
 
