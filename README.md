@@ -178,8 +178,10 @@ python deploy.py --dry-run
 
 ## License
 
-MIT — see [LICENSE.txt](LICENSE.txt)
+Commercial — see [LICENSE.txt](LICENSE.txt)  
+The FL Studio device script (`flstudio/device_ScoreSync.py`) is MIT-licensed and freely distributable.
 
 **Author:** Dustin Douglas  
 **Version:** 2.0.0  
-**Blender:** 4.2 LTS+
+**Blender:** 4.2 LTS+  
+**Contact:** dustin.c.douglas1@gmail.com

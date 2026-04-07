@@ -1,22 +1,46 @@
+ScoreSync Blender Addon — Commercial Use License
+Copyright (c) 2026 Dustin Douglas. All rights reserved.
 
-MIT License
+GRANT OF LICENSE
+----------------
+Upon purchasing a valid license, you are granted a non-exclusive,
+non-transferable, worldwide license to:
 
-Copyright (c) 2025 Dustin Douglas
+  1. Install and use ScoreSync on up to 3 personal computers owned or
+     controlled by you.
+  2. Use ScoreSync in personal, commercial, and client projects (films,
+     live performances, music videos, installations, etc.).
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+RESTRICTIONS
+------------
+You may NOT:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+  1. Redistribute, resell, sublicense, rent, or share ScoreSync or any
+     portion of its source code without explicit written permission from
+     the copyright holder.
+  2. Remove or alter any copyright notices, license text, or attribution.
+  3. Reverse-engineer, decompile, or create derivative works for the
+     purpose of competing with or replacing ScoreSync.
+  4. Share your license key or purchased copy with others.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FREE / OPEN-SOURCE EXCEPTION
+-----------------------------
+The FL Studio device script (ScoreSync/flstudio/device_ScoreSync.py)
+is released under the MIT License and may be freely used, modified, and
+distributed independently of the addon.
+
+UPDATES & SUPPORT
+-----------------
+A valid license includes all minor updates (2.x) released within 12
+months of purchase. Major version upgrades (3.0+) may require a new
+purchase at a discounted upgrade price.
+
+Bug reports and feature requests: https://github.com/DustinD-stack/ScoreSync-Blender/issues
+
+DISCLAIMER
+----------
+THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY
+CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.
+
+For licensing inquiries: dustin.c.douglas1@gmail.com

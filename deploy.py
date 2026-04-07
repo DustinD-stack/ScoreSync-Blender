@@ -131,6 +131,12 @@ def build_zip(dry: bool) -> bool:
                 arcname = Path("ScoreSync") / f.relative_to(BLENDER_ADDON_SRC)
                 zf.write(f, arcname)
                 count += 1
+        # Include root docs for buyers
+        for extra in ("LICENSE.txt", "README.md"):
+            p = ROOT / extra
+            if p.exists():
+                zf.write(p, Path("ScoreSync") / extra)
+                count += 1
 
     print(f"  {count} files -> {zip_path} ({zip_path.stat().st_size // 1024} KB)")
     return True
