@@ -115,11 +115,11 @@ def _draw_sampler_editor(layout, scene):
                 cell = grid.column(align=True)
 
                 if icon_id:
-                    # Thumbnail fills the pad body — large non-interactive preview
-                    cell.template_icon(icon_value=icon_id, scale=9.0)
+                    # Thumbnail fills the pad body
+                    cell.template_icon(icon_value=icon_id, scale=4.8)
                     # Thin bottom strip: name + fire
                     bot = cell.row(align=True)
-                    bot.scale_y = 0.9
+                    bot.scale_y = 0.85
                     op_sel = bot.operator(
                         "scoresync.sampler_select_pad",
                         text=label, depress=is_sel, emboss=True,
@@ -133,8 +133,8 @@ def _draw_sampler_editor(layout, scene):
                     op_f.pad_index  = idx
                     op_f.velocity   = 100
                 else:
-                    # Empty pad — big button, slightly taller than a thumbnail pad strip
-                    cell.scale_y = 6.0
+                    # Empty pad — height matches a thumbnail pad
+                    cell.scale_y = 4.8
                     op_sel = cell.operator(
                         "scoresync.sampler_select_pad",
                         text=label, depress=is_sel, emboss=True,
