@@ -74,7 +74,9 @@ class _ScoreSyncDevice:
 
     # BPM estimate from MIDI clock
     bpm_ema = 0.0
-    bpm_alpha = 0.2
+    bpm_alpha = 0.5        # faster convergence (was 0.2)
+    bpm_stable_count = 0   # ticks within 1 BPM of estimate
+    last_stop_ts = 0.0     # for double-tap stop → reset
 
     # frame/bar state
     frame_origin = 0
@@ -172,14 +174,17 @@ def _enqueue(msg):
             del _message_queue[:-256]      # drop oldest, keep newest
 
 def _toggle_playing(play_wanted: bool):
-    scr = bpy.context.screen
-    if not scr:
-        return
-    is_playing = scr.is_animation_playing
-    if play_wanted and not is_playing:
-        bpy.ops.screen.animation_play()
-    elif (not play_wanted) and is_playing:
-        bpy.ops.screen.animation_play()
+    try:
+        scr = bpy.context.screen
+        if not scr:
+            return
+        is_playing = scr.is_animation_playing
+        if play_wanted and not is_playing:
+            bpy.ops.screen.animation_play()
+        elif (not play_wanted) and is_playing:
+            bpy.ops.screen.animation_play()
+    except Exception:
+        pass  # poll() failure in timer context — not fatal
 
 def _add_marker_if_needed(scene):
     if not getattr(scene, "scoresync_add_marker_every_bar", False):
@@ -313,11 +318,25 @@ def _apply_incoming(scene, ts, msg):
         return True
 
     if t == "stop":
-        DEV.last_any_ts = time.time()
+        now = time.time()
+        double_tap = (now - DEV.last_stop_ts) < 0.6   # two stops within 600 ms
+        DEV.last_stop_ts = now
+        DEV.last_any_ts  = now
         DEV.fl_is_playing = False
         _toggle_playing(False)
-        scene.scoresync_status = "Stop"
-        _log_event("RX stop")
+        if double_tap:
+            # Double-tap stop → rewind to frame 0
+            scene.frame_current = 0
+            DEV.frame_origin   = 0
+            DEV.frame_accum_f  = 0.0
+            DEV.clock_total    = 0
+            DEV.clocks_in_bar  = 0
+            DEV.bar_index      = 1
+            scene.scoresync_status = "Stop → Rewind"
+            _log_event("RX stop double-tap rewind")
+        else:
+            scene.scoresync_status = "Stop"
+            _log_event("RX stop")
         return True
 
     if t == "spp":
@@ -371,12 +390,22 @@ def _apply_incoming(scene, ts, msg):
         # BPM estimate from MIDI clock (24 ticks per quarter note → 60/24 = 2.5)
         if prev_ts > 0:
             dt = now - prev_ts
-            if 0.01 < dt < 0.08:   # valid range: ~750–6000 BPM guard; realistically 0.02–0.05
+            if 0.005 < dt < 0.12:   # valid range: ~50–300 BPM
                 inst_bpm = 2.5 / dt
                 if DEV.bpm_ema <= 0.0:
                     DEV.bpm_ema = inst_bpm
                 else:
                     DEV.bpm_ema = DEV.bpm_alpha * inst_bpm + (1 - DEV.bpm_alpha) * DEV.bpm_ema
+
+                # Snap to nearest integer BPM when stable (within 0.5 BPM for 48+ ticks = 2 beats)
+                nearest = round(DEV.bpm_ema)
+                if abs(DEV.bpm_ema - nearest) < 0.5:
+                    DEV.bpm_stable_count += 1
+                    if DEV.bpm_stable_count >= 48:
+                        DEV.bpm_ema = float(nearest)
+                else:
+                    DEV.bpm_stable_count = 0
+
                 scene.scoresync_bpm_estimate = float(DEV.bpm_ema)
 
         bpm = DEV.bpm_ema if DEV.bpm_ema > 0 else 120.0
@@ -448,39 +477,54 @@ def _apply_incoming(scene, ts, msg):
 
 # ---- Timer ------------------------------------------------------------------
 def scoresync_timer():
-    scene = bpy.context.scene
-    if scene is None:
-        return 0.2
+    try:
+        scene = bpy.context.scene
+        if scene is None:
+            return 0.2
 
-    # Stronger auto-retry
-    _ensure_ports(scene)
+        # Auto-retry ports (wrapped so a port error never kills the timer)
+        try:
+            _ensure_ports(scene)
+        except Exception:
+            pass
 
-    
-    # Drain queue (prioritize transport/SPP over clock)
-    n = 0
-
-    with _QLOCK:
-        # If backlog grows, drop old clock ticks first (keep newest clocks)
-        if len(_message_queue) > 256:
-            clocks_kept = 0
-            new_q = []
-            for ts, msg in reversed(_message_queue):
-                t = msg.get("type")
-                if t == "clock":
-                    if clocks_kept < 64:
-                        new_q.append((ts, msg))
-                        clocks_kept += 1
-                else:
-                    new_q.append((ts, msg))
-            _message_queue[:] = list(reversed(new_q))
-
-        while _message_queue and n < 64:
-            ts, msg = _message_queue[0]
-            if _apply_incoming(scene, ts, msg):
+        # Flush stale messages (older than 5 s) so a backlog never blocks sync
+        now = time.time()
+        with _QLOCK:
+            while _message_queue and (now - _message_queue[0][0]) > 5.0:
                 _message_queue.pop(0)
-            else:
-                break
-            n += 1
+
+        # Drain queue (prioritize transport/SPP over clock)
+        n = 0
+        with _QLOCK:
+            # If backlog grows, drop old clock ticks first (keep newest clocks)
+            if len(_message_queue) > 256:
+                clocks_kept = 0
+                new_q = []
+                for ts, msg in reversed(_message_queue):
+                    t = msg.get("type")
+                    if t == "clock":
+                        if clocks_kept < 64:
+                            new_q.append((ts, msg))
+                            clocks_kept += 1
+                    else:
+                        new_q.append((ts, msg))
+                _message_queue[:] = list(reversed(new_q))
+
+            while _message_queue and n < 64:
+                ts, msg = _message_queue[0]
+                try:
+                    result = _apply_incoming(scene, ts, msg)
+                except Exception:
+                    result = True   # discard broken message, keep timer alive
+                if result:
+                    _message_queue.pop(0)
+                else:
+                    break
+                n += 1
+
+    except Exception:
+        pass  # never let the timer die — Blender deregisters on any uncaught exception
 
 
     # ---- MIDI Mapping apply tick (v2.0) ----
