@@ -585,6 +585,32 @@ class SCORESYNC_OT_sampler_reload_cache(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class SCORESYNC_OT_sampler_reset_pad(bpy.types.Operator):
+    """Clear this pad back to its default empty state"""
+    bl_idname   = "scoresync.sampler_reset_pad"
+    bl_label    = "Reset Pad"
+    bl_options  = {'REGISTER', 'UNDO'}
+
+    pad_index: bpy.props.IntProperty(default=0)
+
+    def execute(self, context):
+        scene    = context.scene
+        banks    = scene.scoresync_banks
+        bank_idx = scene.scoresync_active_bank
+        if bank_idx >= len(banks):
+            return {'CANCELLED'}
+        bank = banks[bank_idx]
+        if self.pad_index >= len(bank.pads):
+            return {'CANCELLED'}
+
+        pad           = bank.pads[self.pad_index]
+        pad.label     = f"Pad {self.pad_index + 1}"
+        pad.sample_id = ""
+        pad.enabled   = True
+        self.report({'INFO'}, f"Pad {self.pad_index + 1} reset")
+        return {'FINISHED'}
+
+
 # ── Registration list ─────────────────────────────────────────────────────────
 sampler_classes = (
     SamplerPad,
@@ -599,4 +625,5 @@ sampler_classes = (
     SCORESYNC_OT_sampler_export_bank,
     SCORESYNC_OT_sampler_import_bank,
     SCORESYNC_OT_sampler_reload_cache,
+    SCORESYNC_OT_sampler_reset_pad,
 )

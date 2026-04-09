@@ -104,6 +104,7 @@ from .ops_sampler import (                         # v2.0 Visual Sampler
     SCORESYNC_OT_sampler_export_bank,
     SCORESYNC_OT_sampler_import_bank,
     SCORESYNC_OT_sampler_reload_cache,
+    SCORESYNC_OT_sampler_reset_pad,
     ingest_note_for_sampler,
     ingest_pc_for_sampler,
     sampler_classes,
@@ -480,6 +481,7 @@ classes = (
     SCORESYNC_OT_sampler_export_bank,
     SCORESYNC_OT_sampler_import_bank,
     SCORESYNC_OT_sampler_reload_cache,
+    SCORESYNC_OT_sampler_reset_pad,
 
     # v2.0 — FX Rack
     SCORESYNC_OT_fx_setup_material,
@@ -498,6 +500,12 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     register_props()
+    # Initialise the pad-preview collection
+    try:
+        from .ui_editor import _ensure_pcoll
+        _ensure_pcoll()
+    except Exception:
+        pass
 
     # Start duplex assist timer (v0.3.0)
     try:
@@ -540,6 +548,13 @@ def unregister():
         pass
 
     unregister_props()
+
+    # Free the pad-preview collection
+    try:
+        from .ui_editor import _free_pcoll
+        _free_pcoll()
+    except Exception:
+        pass
 
     for cls in reversed(classes):
         try:

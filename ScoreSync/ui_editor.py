@@ -8,6 +8,7 @@ Close with OK, Escape, or the X button.
 """
 
 import bpy
+import bpy.utils.previews
 
 
 # ── Persist last-used tab between opens ───────────────────────────────────────
@@ -15,9 +16,55 @@ import bpy
 _ACTIVE_TAB = ["SAMPLER"]
 
 
+# ── Preview collection for pad thumbnails ─────────────────────────────────────
+
+_pcoll = None
+
+def _ensure_pcoll():
+    global _pcoll
+    if _pcoll is None:
+        _pcoll = bpy.utils.previews.new()
+    return _pcoll
+
+def _free_pcoll():
+    global _pcoll
+    if _pcoll is not None:
+        bpy.utils.previews.remove(_pcoll)
+        _pcoll = None
+
+def _pad_icon_id(sample: dict) -> int:
+    """Return a Blender icon_id for the sample thumbnail, or 0 if unavailable."""
+    if not sample:
+        return 0
+    import os
+    pcoll     = _ensure_pcoll()
+    sid       = sample.get("id", "")
+    src       = sample.get("source_path", "")
+    src_type  = sample.get("source_type", "")
+
+    if not sid or not src:
+        return 0
+
+    # Return cached icon if already loaded
+    if sid in pcoll:
+        return pcoll[sid].icon_id
+
+    if not os.path.exists(src):
+        return 0
+
+    try:
+        load_type = "IMAGE" if src_type == "IMAGE_SEQUENCE" else "MOVIE"
+        preview = pcoll.load(sid, src, load_type)
+        return preview.icon_id
+    except Exception:
+        return 0
+
+
 # ── Sampler draw (two-column) ─────────────────────────────────────────────────
 
 def _draw_sampler_editor(layout, scene):
+    from .ops_sampler import DEV_SAMPLER
+
     banks           = getattr(scene, "scoresync_banks",      [])
     active_bank_idx = getattr(scene, "scoresync_active_bank", 0)
     active_pad_idx  = getattr(scene, "scoresync_active_pad",  0)
@@ -49,38 +96,37 @@ def _draw_sampler_editor(layout, scene):
         pad_count = len(pads)
 
         if pad_count:
-            grid_col = left.column(align=True)
-            for row_i in range(0, pad_count, 4):
-                pad_row = grid_col.row(align=True)
-                for col_i in range(4):
-                    idx = row_i + col_i
-                    if idx >= pad_count:
-                        pad_row.separator()
-                        continue
-                    pad    = pads[idx]
-                    is_sel = (idx == active_pad_idx)
-                    cell   = pad_row.column(align=True)
+            # ── Big box pad grid using grid_flow ──────────────────────────
+            grid = left.grid_flow(
+                row_major=True, columns=4,
+                even_columns=True, even_rows=True, align=True,
+            )
+            for idx in range(pad_count):
+                pad    = pads[idx]
+                is_sel = (idx == active_pad_idx)
+                sample = DEV_SAMPLER.cache.get(pad.sample_id) if pad.sample_id else None
 
-                    label = pad.label or f"P{idx + 1}"
-                    if not pad.enabled:
-                        label = f"[{label}]"
+                label = pad.label or f"P{idx + 1}"
+                if not pad.enabled:
+                    label = f"[{label}]"
 
-                    sub = cell.row(align=True)
-                    sub.scale_y = 1.8
-                    op_sel = sub.operator(
+                icon_id = _pad_icon_id(sample)
+
+                cell = grid.column(align=True)
+                cell.scale_y = 4.0   # tall = boxy
+
+                if icon_id:
+                    op_sel = cell.operator(
                         "scoresync.sampler_select_pad",
-                        text=label,
-                        depress=is_sel,
-                        emboss=True,
+                        text=label, depress=is_sel, emboss=True,
+                        icon_value=icon_id,
                     )
-                    op_sel.index = idx
-                    op_fire = sub.operator(
-                        "scoresync.sampler_fire_pad",
-                        text="", icon='PLAY',
+                else:
+                    op_sel = cell.operator(
+                        "scoresync.sampler_select_pad",
+                        text=label, depress=is_sel, emboss=True,
                     )
-                    op_fire.bank_index = active_bank_idx
-                    op_fire.pad_index  = idx
-                    op_fire.velocity   = 100
+                op_sel.index = idx
 
         left.separator(factor=0.6)
         row = left.row(align=True)
@@ -100,10 +146,18 @@ def _draw_sampler_editor(layout, scene):
         pad_count = len(pads)
 
         if pad_count and active_pad_idx < pad_count:
-            pad = pads[active_pad_idx]
-            box = right.box()
-            box.label(text=f"Pad {active_pad_idx + 1} — {pad.label or '(unlabelled)'}",
+            pad    = pads[active_pad_idx]
+            sample = DEV_SAMPLER.cache.get(pad.sample_id) if pad.sample_id else None
+            box    = right.box()
+
+            # Header row with pad title + reset button
+            hdr = box.row(align=True)
+            hdr.label(text=f"Pad {active_pad_idx + 1} — {pad.label or '(unlabelled)'}",
                       icon='PROPERTIES')
+            op_rst = hdr.operator("scoresync.sampler_reset_pad",
+                                  text="", icon='TRASH', emboss=False)
+            op_rst.pad_index = active_pad_idx
+
             box.prop(pad, "label",   text="Name")
             box.prop(pad, "enabled", text="Enabled")
             box.separator(factor=0.4)
@@ -122,9 +176,11 @@ def _draw_sampler_editor(layout, scene):
             box.prop(pad, "color", text="Colour")
             box.separator(factor=0.4)
 
-            from .ops_sampler import DEV_SAMPLER
-            sample = DEV_SAMPLER.cache.get(pad.sample_id) if pad.sample_id else None
+            # Sample info + preview
             if sample:
+                icon_id = _pad_icon_id(sample)
+                if icon_id:
+                    box.template_icon(icon_value=icon_id, scale=5.0)
                 box.label(
                     text=f"{sample.get('label','?')}  "
                          f"({sample.get('frame_start')}→{sample.get('frame_end')})",
@@ -144,6 +200,15 @@ def _draw_sampler_editor(layout, scene):
             op_s = row.operator("scoresync.sampler_sample_from_timeline",
                                 icon='RENDER_STILL', text="Sample Timeline")
             op_s.pad_index = active_pad_idx
+
+            # Fire button
+            row2 = box.row(align=True)
+            row2.scale_y = 1.2
+            op_f = row2.operator("scoresync.sampler_fire_pad",
+                                 icon='PLAY', text="Fire Pad")
+            op_f.bank_index = active_bank_idx
+            op_f.pad_index  = active_pad_idx
+            op_f.velocity   = 100
         else:
             right.label(text="Select a pad to edit.", icon='INFO')
 
