@@ -1,24 +1,27 @@
 """
 ScoreSync v2 — ui_editor.py
-Unified ScoreSync Editor — persistent popover panel.
+Unified ScoreSync Editor — large tabbed popup dialog.
 
 Opens via the "Open ScoreSync Editor" button in any ScoreSync N-panel.
-Uses wm.call_panel(keep_open=True) so the panel stays open as a floating
-overlay and does NOT close when you click on something outside it.
-Close it deliberately with Escape or the X button in the panel header.
+Width defaults to 960 px; Blender lets you drag the dialog edges to resize.
+Close with OK, Escape, or the X button.
 """
 
 import bpy
 
 
-# ── Sampler draw (wide two-column layout) ─────────────────────────────────────
+# ── Persist last-used tab between opens ───────────────────────────────────────
+
+_ACTIVE_TAB = ["SAMPLER"]
+
+
+# ── Sampler draw (two-column) ─────────────────────────────────────────────────
 
 def _draw_sampler_editor(layout, scene):
     banks           = getattr(scene, "scoresync_banks",      [])
     active_bank_idx = getattr(scene, "scoresync_active_bank", 0)
     active_pad_idx  = getattr(scene, "scoresync_active_pad",  0)
 
-    # Bank tabs + controls
     top = layout.row(align=True)
     top.scale_y = 1.2
     for i, bank in enumerate(banks):
@@ -36,7 +39,6 @@ def _draw_sampler_editor(layout, scene):
 
     layout.separator(factor=0.4)
 
-    # Two-column split: pad grid | inspector
     split = layout.split(factor=0.52)
     left  = split.column()
     right = split.column()
@@ -92,7 +94,6 @@ def _draw_sampler_editor(layout, scene):
         row.operator("scoresync.sampler_export_bank",  icon='EXPORT',       text="Export Bank")
         row.operator("scoresync.sampler_import_bank",  icon='IMPORT',       text="Import Bank")
 
-    # Right — pad inspector
     if banks and active_bank_idx < len(banks):
         bank      = banks[active_bank_idx]
         pads      = bank.pads
@@ -147,7 +148,7 @@ def _draw_sampler_editor(layout, scene):
             right.label(text="Select a pad to edit.", icon='INFO')
 
 
-# ── FX Rack draw (wide two-column layout) ─────────────────────────────────────
+# ── FX Rack draw (two-column) ─────────────────────────────────────────────────
 
 def _draw_fx_editor(layout, scene):
     from .ops_fx import DEV_FX
@@ -188,7 +189,7 @@ def _draw_fx_editor(layout, scene):
 
             row = left.row(align=True)
             row.prop(slot, "enabled", text="")
-            op_sel = row.operator(
+            op_sel = left.row(align=True) if False else row.operator(
                 "scoresync.fx_select_slot",
                 text=f"{slot.label}  [{bar}] {live:.2f}",
                 depress=is_sel, emboss=is_sel,
@@ -247,7 +248,7 @@ def _draw_fx_editor(layout, scene):
         right.label(text="Select a slot to edit.", icon='INFO')
 
 
-# ── MIDI Mapping draw (wide two-column layout) ────────────────────────────────
+# ── MIDI Mapping draw (two-column) ────────────────────────────────────────────
 
 def _draw_mapping_editor(layout, scene):
     from .ops_mapping import DEV_MAP, _midi_to_value
@@ -341,70 +342,53 @@ def _draw_mapping_editor(layout, scene):
         right.label(text="Select a mapping to edit.", icon='INFO')
 
 
-# ── Persistent popup panel ────────────────────────────────────────────────────
-# Registered without bl_category so it never appears in any N-panel tab.
-# Opened exclusively via wm.call_panel(keep_open=True) which creates a
-# floating overlay that does NOT close when you click outside.
+# ── Editor operator ───────────────────────────────────────────────────────────
 
-class SCORESYNC_PT_editor_popup(bpy.types.Panel):
-    """ScoreSync Editor — Sampler, FX Rack, MIDI Mapping"""
-    bl_label       = "ScoreSync Editor"
-    bl_idname      = "SCORESYNC_PT_editor_popup"
-    bl_space_type  = 'VIEW_3D'
-    bl_region_type = 'UI'
-    # Intentionally no bl_category — keeps it out of the N-panel sidebar
+class SCORESYNC_OT_open_editor(bpy.types.Operator):
+    """Open the ScoreSync Editor — Sampler, FX Rack, and MIDI Mapping in one place"""
+    bl_idname  = "scoresync.open_editor"
+    bl_label   = "ScoreSync Editor"
+    bl_options = {'REGISTER'}
 
-    @classmethod
-    def poll(cls, context):
-        return True
+    tab: bpy.props.EnumProperty(
+        name="Tab",
+        items=[
+            ('SAMPLER', "Sampler",      "Visual Sampler pad banks and clip loader", 'NLA',    0),
+            ('FX',      "FX Rack",      "Live MIDI-driven visual FX slots",         'SOUND',  1),
+            ('MAPPING', "MIDI Mapping", "Map any MIDI control to any Blender property", 'DRIVER', 2),
+        ],
+        default='SAMPLER',
+    )
+
+    def invoke(self, context, event):
+        self.tab = _ACTIVE_TAB[0]
+        return context.window_manager.invoke_props_dialog(self, width=960)
 
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = False
-        scene  = context.scene
 
-        tab = getattr(scene, "scoresync_editor_tab", 'SAMPLER')
-
-        # Tab bar
         row = layout.row(align=True)
-        row.scale_y = 1.4
-        row.prop(scene, "scoresync_editor_tab", expand=True)
-        layout.separator(factor=0.5)
+        row.scale_y = 1.5
+        row.prop(self, "tab", expand=True)
+        layout.separator(factor=0.6)
 
-        if tab == 'SAMPLER':
+        _ACTIVE_TAB[0] = self.tab
+
+        scene = context.scene
+        if self.tab == 'SAMPLER':
             _draw_sampler_editor(layout, scene)
-        elif tab == 'FX':
+        elif self.tab == 'FX':
             _draw_fx_editor(layout, scene)
-        elif tab == 'MAPPING':
+        elif self.tab == 'MAPPING':
             _draw_mapping_editor(layout, scene)
 
-
-# ── Operator — opens the panel as a persistent overlay ───────────────────────
-
-class SCORESYNC_OT_open_editor(bpy.types.Operator):
-    """Open the ScoreSync Editor — stays open until you press Escape or click X"""
-    bl_idname  = "scoresync.open_editor"
-    bl_label   = "ScoreSync Editor"
-    bl_options = {'REGISTER', 'INTERNAL'}
-
-    def invoke(self, context, event):
-        bpy.ops.wm.call_panel(
-            name="SCORESYNC_PT_editor_popup",
-            keep_open=True,
-        )
-        return {'FINISHED'}
-
     def execute(self, context):
-        bpy.ops.wm.call_panel(
-            name="SCORESYNC_PT_editor_popup",
-            keep_open=True,
-        )
         return {'FINISHED'}
 
 
 # ── Registration ──────────────────────────────────────────────────────────────
 
 editor_classes = (
-    SCORESYNC_PT_editor_popup,
     SCORESYNC_OT_open_editor,
 )
