@@ -301,7 +301,25 @@ def _draw_fx_editor(layout, scene):
             box.prop(slot, "target_name", text="Object")
 
         box.separator(factor=0.4)
-        box.label(text="MIDI Binding:", icon='DRIVER')
+
+        # ── MIDI Binding with prominent listener button ───────────────────
+        from .ops_fx import DEV_FX as _DEV_FX
+        is_learning_this = (_DEV_FX.learning_slot == active_fx)
+
+        bind_row = box.row(align=True)
+        bind_row.scale_y = 1.5
+        if is_learning_this:
+            bind_row.alert = True
+            bind_row.label(text="Touch any control on your device…", icon='REC')
+            op_cancel = bind_row.operator("scoresync.fx_learn_cancel",
+                                          text="", icon='X')
+        else:
+            op_bind = bind_row.operator("scoresync.fx_learn_start",
+                                        text="Bind MIDI — touch a control", icon='REC')
+            op_bind.index = active_fx
+
+        box.separator(factor=0.3)
+        box.label(text="Current binding:", icon='DRIVER')
         row = box.row(align=True)
         row.prop(slot, "midi_type",    text="")
         row.prop(slot, "midi_channel", text="Ch")
@@ -331,22 +349,31 @@ def _draw_fx_editor(layout, scene):
 def _draw_mapping_editor(layout, scene):
     from .ops_mapping import DEV_MAP, _midi_to_value
 
-    top = layout.row(align=True)
+    # ── Learn row ─────────────────────────────────────────────────────────────
+    learn_row = layout.row(align=True)
+    learn_row.scale_y = 1.4
     if DEV_MAP.learning:
-        top.alert = True
-        top.operator("scoresync.mapping_learn_cancel", icon='X', text="Cancel Learn")
+        learn_row.alert = True
+        learn_row.label(text="Touch any control on your device…", icon='REC')
+        learn_row.operator("scoresync.mapping_learn_cancel", icon='X', text="Cancel")
     else:
-        top.operator("scoresync.mapping_learn_start",  icon='REC', text="Learn MIDI")
-
-    top.separator()
-    top.label(text="Presets:")
-    for pid, lbl in (("CAMERA", "Camera"), ("ACTIVE_OBJECT", "Object"), ("SCENE", "Scene")):
-        op = top.operator("scoresync.mapping_apply_preset", text=lbl)
-        op.preset = pid
+        learn_row.operator("scoresync.mapping_learn_start",
+                           icon='REC', text="Learn MIDI — touch a control to bind")
 
     status = getattr(scene, "scoresync_mapping_learn_status", "")
     if status:
-        layout.label(text=status, icon='INFO')
+        srow = layout.row()
+        srow.alert = "Bound" in status
+        srow.label(text=status, icon='CHECKMARK' if "Bound" in status else 'INFO')
+
+    layout.separator(factor=0.3)
+
+    # ── Presets row ───────────────────────────────────────────────────────────
+    top = layout.row(align=True)
+    top.label(text="Presets:", icon='PRESET_NEW')
+    for pid, lbl in (("CAMERA", "Camera"), ("ACTIVE_OBJECT", "Object"), ("SCENE", "Scene")):
+        op = top.operator("scoresync.mapping_apply_preset", text=lbl)
+        op.preset = pid
 
     layout.separator(factor=0.4)
 

@@ -38,13 +38,15 @@ import time
 
 # ── Learn state (module-level, not per-scene) ─────────────────────────────────
 class _MappingLearnState:
-    learning      = False
-    pending_type  = ""      # "CC" | "NOTE_ON"
-    pending_ch    = 0
-    pending_num   = 0
-    pending_val   = 0
-    pending_ts    = 0.0
-    last_val      = {}      # (type, ch, num) -> last raw value (0-127)
+    learning       = False
+    pending_type   = ""      # "CC" | "NOTE_ON"
+    pending_ch     = 0
+    pending_num    = 0
+    pending_val    = 0
+    pending_ts     = 0.0
+    capture_dirty  = False   # True once MIDI thread writes a capture
+    target_idx     = -1      # mapping index to auto-assign when capture arrives
+    last_val       = {}      # (type, ch, num) -> last raw value (0-127)
 
 DEV_MAP = _MappingLearnState()
 
@@ -138,6 +140,29 @@ def _midi_to_value(raw: int, v_min: float, v_max: float) -> float:
 # ── Apply tick (called from scoresync_timer) ──────────────────────────────────
 def apply_mappings_tick(scene):
     """Apply any pending MIDI values to mapped properties. Call from main timer."""
+
+    # ── Auto-assign after learn capture ──────────────────────────────────────
+    if DEV_MAP.capture_dirty and DEV_MAP.pending_type:
+        DEV_MAP.capture_dirty = False
+        mappings = getattr(scene, "scoresync_mappings", None)
+        idx = DEV_MAP.target_idx
+        if mappings and 0 <= idx < len(mappings):
+            m = mappings[idx]
+            m.midi_type = DEV_MAP.pending_type
+            m.channel   = DEV_MAP.pending_ch
+            m.midi_num  = DEV_MAP.pending_num
+            scene.scoresync_mapping_learn_status = (
+                f"Bound  {DEV_MAP.pending_type} ch{DEV_MAP.pending_ch+1} "
+                f"#{DEV_MAP.pending_num}  →  {m.label}"
+            )
+        else:
+            # No mapping selected — still show what was captured
+            scene.scoresync_mapping_learn_status = (
+                f"Captured  {DEV_MAP.pending_type} ch{DEV_MAP.pending_ch+1} "
+                f"#{DEV_MAP.pending_num}  — select a mapping then click ← Assign"
+            )
+        DEV_MAP.target_idx = -1
+
     mappings = getattr(scene, "scoresync_mappings", None)
     if mappings is None:
         return
@@ -165,12 +190,13 @@ def ingest_midi_for_mapping(midi_type: str, channel: int, num: int, val: int):
     DEV_MAP.last_val[key] = val
 
     if DEV_MAP.learning:
-        DEV_MAP.pending_type = midi_type
-        DEV_MAP.pending_ch   = channel
-        DEV_MAP.pending_num  = num
-        DEV_MAP.pending_val  = val
-        DEV_MAP.pending_ts   = time.time()
-        DEV_MAP.learning     = False   # capture one event then stop
+        DEV_MAP.pending_type  = midi_type
+        DEV_MAP.pending_ch    = channel
+        DEV_MAP.pending_num   = num
+        DEV_MAP.pending_val   = val
+        DEV_MAP.pending_ts    = time.time()
+        DEV_MAP.capture_dirty = True   # signal main thread to auto-assign
+        DEV_MAP.learning      = False  # capture one event then stop
 
 
 # ── Collection item property group ───────────────────────────────────────────
@@ -208,9 +234,11 @@ class SCORESYNC_OT_mapping_learn_start(bpy.types.Operator):
     bl_description = "Move a control on your device — ScoreSync will capture the next CC or Note"
 
     def execute(self, context):
-        DEV_MAP.learning = True
-        context.scene.scoresync_mapping_learn_status = "Waiting for MIDI input..."
-        self.report({'INFO'}, "Learn mode ON — move a knob or hit a pad")
+        DEV_MAP.learning      = True
+        DEV_MAP.capture_dirty = False
+        DEV_MAP.target_idx    = getattr(context.scene, "scoresync_mapping_index", -1)
+        context.scene.scoresync_mapping_learn_status = "Listening… touch any control on your device"
+        self.report({'INFO'}, "Learn mode ON — touch a pad, knob, or button")
         return {'FINISHED'}
 
 
