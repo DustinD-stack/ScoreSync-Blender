@@ -1,17 +1,14 @@
 """
 ScoreSync v2 — ui_editor.py
-Unified ScoreSync Editor — a full-width tabbed popup combining the
-Visual Sampler, FX Rack, and MIDI Mapping into one dedicated workspace.
+Unified ScoreSync Editor — persistent popover panel.
 
-Open via: N-panel header button  OR  scoresync.open_editor operator
+Opens via the "Open ScoreSync Editor" button in any ScoreSync N-panel.
+Uses wm.call_panel(keep_open=True) so the panel stays open as a floating
+overlay and does NOT close when you click on something outside it.
+Close it deliberately with Escape or the X button in the panel header.
 """
 
 import bpy
-
-
-# ── Tab state (persists while Blender is open) ────────────────────────────────
-
-_ACTIVE_TAB = ["SAMPLER"]   # mutable so inner functions can write it
 
 
 # ── Sampler draw (wide two-column layout) ─────────────────────────────────────
@@ -21,7 +18,7 @@ def _draw_sampler_editor(layout, scene):
     active_bank_idx = getattr(scene, "scoresync_active_bank", 0)
     active_pad_idx  = getattr(scene, "scoresync_active_pad",  0)
 
-    # ── Top bar: bank tabs + controls
+    # Bank tabs + controls
     top = layout.row(align=True)
     top.scale_y = 1.2
     for i, bank in enumerate(banks):
@@ -39,12 +36,11 @@ def _draw_sampler_editor(layout, scene):
 
     layout.separator(factor=0.4)
 
-    # ── Two-column split: pad grid | inspector
+    # Two-column split: pad grid | inspector
     split = layout.split(factor=0.52)
     left  = split.column()
     right = split.column()
 
-    # Left — pad grid
     if active_bank_idx < len(banks):
         bank      = banks[active_bank_idx]
         pads      = bank.pads
@@ -62,22 +58,21 @@ def _draw_sampler_editor(layout, scene):
                     pad    = pads[idx]
                     is_sel = (idx == active_pad_idx)
                     cell   = pad_row.column(align=True)
-                    cell.scale_y = 2.0
 
-                    # Pad button — label + enabled state
-                    label = pad.label or f"P{idx+1}"
+                    label = pad.label or f"P{idx + 1}"
                     if not pad.enabled:
                         label = f"[{label}]"
-                    op_sel = cell.operator(
+
+                    sub = cell.row(align=True)
+                    sub.scale_y = 1.8
+                    op_sel = sub.operator(
                         "scoresync.sampler_select_pad",
                         text=label,
                         depress=is_sel,
                         emboss=True,
                     )
                     op_sel.index = idx
-                    # Fire button under each pad
-                    cell.scale_y = 0.7
-                    op_fire = cell.operator(
+                    op_fire = sub.operator(
                         "scoresync.sampler_fire_pad",
                         text="", icon='PLAY',
                     )
@@ -106,9 +101,8 @@ def _draw_sampler_editor(layout, scene):
         if pad_count and active_pad_idx < pad_count:
             pad = pads[active_pad_idx]
             box = right.box()
-            hdr = box.row()
-            hdr.label(text=f"Pad {active_pad_idx + 1} — {pad.label or '(unlabelled)'}", icon='PROPERTIES')
-
+            box.label(text=f"Pad {active_pad_idx + 1} — {pad.label or '(unlabelled)'}",
+                      icon='PROPERTIES')
             box.prop(pad, "label",   text="Name")
             box.prop(pad, "enabled", text="Enabled")
             box.separator(factor=0.4)
@@ -127,7 +121,6 @@ def _draw_sampler_editor(layout, scene):
             box.prop(pad, "color", text="Colour")
             box.separator(factor=0.4)
 
-            # Sample info
             from .ops_sampler import DEV_SAMPLER
             sample = DEV_SAMPLER.cache.get(pad.sample_id) if pad.sample_id else None
             if sample:
@@ -160,7 +153,6 @@ def _draw_fx_editor(layout, scene):
     from .ops_fx import DEV_FX
     from .ops_mapping import DEV_MAP
 
-    # Learn banner
     learn_status = getattr(scene, "scoresync_fx_learn_status", "")
     if DEV_FX.learning_slot >= 0:
         row = layout.row(align=True)
@@ -170,7 +162,6 @@ def _draw_fx_editor(layout, scene):
     elif learn_status:
         layout.label(text=learn_status, icon='INFO')
 
-    # Setup shortcuts
     row = layout.row(align=True)
     row.operator("scoresync.fx_setup_material",  icon='NODE_MATERIAL', text="Setup Material FX Chain")
     row.operator("scoresync.vse_setup_strip",    icon='SHADERFX',      text="Setup Strip FX Modifiers")
@@ -179,12 +170,10 @@ def _draw_fx_editor(layout, scene):
     fx_slots  = getattr(scene, "scoresync_fx_slots", [])
     active_fx = getattr(scene, "scoresync_fx_index", 0)
 
-    # Two-column split: slot list | inspector
     split = layout.split(factor=0.50)
     left  = split.column()
     right = split.column()
 
-    # Left — slot list
     if not fx_slots:
         left.label(text="No FX slots yet — click Add FX Slot.", icon='INFO')
     else:
@@ -216,7 +205,6 @@ def _draw_fx_editor(layout, scene):
     left.separator(factor=0.5)
     left.operator("scoresync.fx_add_slot", icon='ADD', text="Add FX Slot")
 
-    # Right — inspector
     if fx_slots and active_fx < len(fx_slots):
         slot = fx_slots[active_fx]
         box  = right.box()
@@ -264,7 +252,6 @@ def _draw_fx_editor(layout, scene):
 def _draw_mapping_editor(layout, scene):
     from .ops_mapping import DEV_MAP, _midi_to_value
 
-    # Learn + presets bar
     top = layout.row(align=True)
     if DEV_MAP.learning:
         top.alert = True
@@ -287,12 +274,10 @@ def _draw_mapping_editor(layout, scene):
     mappings       = getattr(scene, "scoresync_mappings", [])
     active_map_idx = getattr(scene, "scoresync_mapping_index", 0)
 
-    # Two-column split: list | inspector
     split = layout.split(factor=0.52)
     left  = split.column()
     right = split.column()
 
-    # Left — mapping list
     if not mappings:
         left.label(text="No mappings yet — click Learn or a preset.", icon='INFO')
     else:
@@ -317,7 +302,6 @@ def _draw_mapping_editor(layout, scene):
     row.operator("scoresync.mapping_export", icon='EXPORT', text="Export")
     row.operator("scoresync.mapping_import", icon='IMPORT', text="Import")
 
-    # Right — inspector
     if mappings and active_map_idx < len(mappings):
         m   = mappings[active_map_idx]
         box = right.box()
@@ -357,56 +341,70 @@ def _draw_mapping_editor(layout, scene):
         right.label(text="Select a mapping to edit.", icon='INFO')
 
 
-# ── Editor operator ───────────────────────────────────────────────────────────
+# ── Persistent popup panel ────────────────────────────────────────────────────
+# Registered without bl_category so it never appears in any N-panel tab.
+# Opened exclusively via wm.call_panel(keep_open=True) which creates a
+# floating overlay that does NOT close when you click outside.
 
-class SCORESYNC_OT_open_editor(bpy.types.Operator):
-    """Open the ScoreSync Editor — Sampler, FX Rack, and MIDI Mapping in one place"""
-    bl_idname  = "scoresync.open_editor"
-    bl_label   = "ScoreSync Editor"
-    bl_options = {'REGISTER'}
+class SCORESYNC_PT_editor_popup(bpy.types.Panel):
+    """ScoreSync Editor — Sampler, FX Rack, MIDI Mapping"""
+    bl_label       = "ScoreSync Editor"
+    bl_idname      = "SCORESYNC_PT_editor_popup"
+    bl_space_type  = 'VIEW_3D'
+    bl_region_type = 'UI'
+    # Intentionally no bl_category — keeps it out of the N-panel sidebar
 
-    tab: bpy.props.EnumProperty(
-        name="Tab",
-        items=[
-            ('SAMPLER', "Sampler",      "Visual Sampler pad banks and clip loader", 'NLA',    0),
-            ('FX',      "FX Rack",      "Live MIDI-driven visual FX slots",         'SOUND',  1),
-            ('MAPPING', "MIDI Mapping", "Map any MIDI control to any Blender property", 'DRIVER', 2),
-        ],
-        default='SAMPLER',
-    )
-
-    def invoke(self, context, event):
-        # Restore last-used tab from module-level state
-        self.tab = _ACTIVE_TAB[0]
-        return context.window_manager.invoke_props_dialog(self, width=960)
+    @classmethod
+    def poll(cls, context):
+        return True
 
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = False
+        scene  = context.scene
 
-        # ── Tab bar
+        tab = getattr(scene, "scoresync_editor_tab", 'SAMPLER')
+
+        # Tab bar
         row = layout.row(align=True)
-        row.scale_y = 1.5
-        row.prop(self, "tab", expand=True)
-        layout.separator(factor=0.6)
+        row.scale_y = 1.4
+        row.prop(scene, "scoresync_editor_tab", expand=True)
+        layout.separator(factor=0.5)
 
-        # Save chosen tab so next open restores it
-        _ACTIVE_TAB[0] = self.tab
-
-        scene = context.scene
-        if self.tab == 'SAMPLER':
+        if tab == 'SAMPLER':
             _draw_sampler_editor(layout, scene)
-        elif self.tab == 'FX':
+        elif tab == 'FX':
             _draw_fx_editor(layout, scene)
-        elif self.tab == 'MAPPING':
+        elif tab == 'MAPPING':
             _draw_mapping_editor(layout, scene)
 
+
+# ── Operator — opens the panel as a persistent overlay ───────────────────────
+
+class SCORESYNC_OT_open_editor(bpy.types.Operator):
+    """Open the ScoreSync Editor — stays open until you press Escape or click X"""
+    bl_idname  = "scoresync.open_editor"
+    bl_label   = "ScoreSync Editor"
+    bl_options = {'REGISTER', 'INTERNAL'}
+
+    def invoke(self, context, event):
+        bpy.ops.wm.call_panel(
+            name="SCORESYNC_PT_editor_popup",
+            keep_open=True,
+        )
+        return {'FINISHED'}
+
     def execute(self, context):
+        bpy.ops.wm.call_panel(
+            name="SCORESYNC_PT_editor_popup",
+            keep_open=True,
+        )
         return {'FINISHED'}
 
 
 # ── Registration ──────────────────────────────────────────────────────────────
 
 editor_classes = (
+    SCORESYNC_PT_editor_popup,
     SCORESYNC_OT_open_editor,
 )

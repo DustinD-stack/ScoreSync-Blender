@@ -305,6 +305,17 @@ def register_props():
         description="MIDI channel to listen for Program Change bank-switch messages (0 = ch 1)",
     )
 
+    # ScoreSync Editor tab selection
+    scene.scoresync_editor_tab = bpy.props.EnumProperty(
+        name="Editor Tab",
+        items=[
+            ('SAMPLER',  "Sampler",      "Visual Sampler pad banks and clip loader", 'NLA',    0),
+            ('FX',       "FX Rack",      "Live MIDI-driven visual FX slots",         'SOUND',  1),
+            ('MAPPING',  "MIDI Mapping", "Map any MIDI control to any Blender property", 'DRIVER', 2),
+        ],
+        default='SAMPLER',
+    )
+
     # FX Rack (v2.0)
     scene.scoresync_fx_slots = bpy.props.CollectionProperty(type=ScoreSyncFXSlot)
     scene.scoresync_fx_index = bpy.props.IntProperty(
@@ -353,6 +364,7 @@ def unregister_props():
         "scoresync_active_pad",
         "scoresync_sampler_pc_switch",
         "scoresync_sampler_pc_channel",
+        "scoresync_editor_tab",
         "scoresync_fx_slots",
         "scoresync_fx_index",
         "scoresync_fx_learn_status",
