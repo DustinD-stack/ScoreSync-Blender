@@ -113,20 +113,33 @@ def _draw_sampler_editor(layout, scene):
                 icon_id = _pad_icon_id(sample)
 
                 cell = grid.column(align=True)
-                cell.scale_y = 4.0   # tall = boxy
 
                 if icon_id:
-                    op_sel = cell.operator(
+                    # Thumbnail fills the pad body — large non-interactive preview
+                    cell.template_icon(icon_value=icon_id, scale=9.0)
+                    # Thin bottom strip: name + fire
+                    bot = cell.row(align=True)
+                    bot.scale_y = 0.9
+                    op_sel = bot.operator(
                         "scoresync.sampler_select_pad",
                         text=label, depress=is_sel, emboss=True,
-                        icon_value=icon_id,
                     )
+                    op_sel.index = idx
+                    op_f = bot.operator(
+                        "scoresync.sampler_fire_pad",
+                        text="", icon='PLAY',
+                    )
+                    op_f.bank_index = active_bank_idx
+                    op_f.pad_index  = idx
+                    op_f.velocity   = 100
                 else:
+                    # Empty pad — big button, slightly taller than a thumbnail pad strip
+                    cell.scale_y = 6.0
                     op_sel = cell.operator(
                         "scoresync.sampler_select_pad",
                         text=label, depress=is_sel, emboss=True,
                     )
-                op_sel.index = idx
+                    op_sel.index = idx
 
         left.separator(factor=0.6)
         row = left.row(align=True)
@@ -180,7 +193,7 @@ def _draw_sampler_editor(layout, scene):
             if sample:
                 icon_id = _pad_icon_id(sample)
                 if icon_id:
-                    box.template_icon(icon_value=icon_id, scale=5.0)
+                    box.template_icon(icon_value=icon_id, scale=8.0)
                 box.label(
                     text=f"{sample.get('label','?')}  "
                          f"({sample.get('frame_start')}→{sample.get('frame_end')})",
@@ -254,7 +267,7 @@ def _draw_fx_editor(layout, scene):
 
             row = left.row(align=True)
             row.prop(slot, "enabled", text="")
-            op_sel = left.row(align=True) if False else row.operator(
+            op_sel = row.operator(
                 "scoresync.fx_select_slot",
                 text=f"{slot.label}  [{bar}] {live:.2f}",
                 depress=is_sel, emboss=is_sel,
