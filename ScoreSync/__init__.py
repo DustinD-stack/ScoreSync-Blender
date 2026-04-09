@@ -13,6 +13,7 @@ import time
 
 # ---- Imports ---------------------------------------------------------------
 from .ui_panel import view3d_panel_classes
+from .ui_editor import SCORESYNC_OT_open_editor, editor_classes
 
 from .ui_vse import (
     SCORESYNC_PT_vse_main,
@@ -429,6 +430,9 @@ classes = (
     *view3d_panel_classes,
     *vse_panel_classes,
     *node_panel_classes,
+
+    # ---- ScoreSync Editor (unified popup) ----
+    *editor_classes,
 
     SCORESYNC_OT_refresh_ports,
     SCORESYNC_OT_connect,

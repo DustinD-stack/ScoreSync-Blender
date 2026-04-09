@@ -73,7 +73,14 @@ class SCORESYNC_PT_vse_main(bpy.types.Panel):
         row.operator("scoresync.tx_stop",  icon='PAUSE', text="Stop")
         row.operator("scoresync.tx_locate_to_timeline", icon='TIME', text="Locate")
 
+        # ScoreSync Editor button
+        layout.separator(factor=0.2)
+        col = layout.column(align=True)
+        col.scale_y = 1.5
+        col.operator("scoresync.open_editor", icon='NLA', text="Open ScoreSync Editor")
+
         # Quick editor jump
+        layout.separator(factor=0.2)
         row = layout.row(align=True)
         op_v3d = row.operator("scoresync.open_area", icon='VIEW3D',
                               text="→ 3D View")

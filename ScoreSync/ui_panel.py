@@ -355,7 +355,14 @@ class SCORESYNC_PT_main(bpy.types.Panel):
             row.operator("scoresync.hardware_mode_apply",
                          icon='PACKAGE',  text="Hardware Mode →")
 
-        # Quick editor jump
+        # ── ScoreSync Editor button ──────────────────────────────────────────
+        layout.separator(factor=0.3)
+        col = layout.column(align=True)
+        col.scale_y = 1.6
+        col.operator("scoresync.open_editor", icon='NLA', text="Open ScoreSync Editor")
+
+        # Quick area jump
+        layout.separator(factor=0.2)
         row = layout.row(align=True)
         op_vse = row.operator("scoresync.open_area", icon='SEQUENCE',
                               text="→ Video Editor")
@@ -529,119 +536,6 @@ class SCORESYNC_PT_master(bpy.types.Panel):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# MIDI MAPPING
-# ════════════════════════════════════════════════════════════════════════════
-
-class SCORESYNC_PT_mapping(bpy.types.Panel):
-    bl_label       = "MIDI Mapping"
-    bl_idname      = "SCORESYNC_PT_mapping"
-    bl_space_type  = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category    = "ScoreSync"
-    bl_parent_id   = "SCORESYNC_PT_main"
-    bl_options     = {'DEFAULT_CLOSED'}
-
-    def draw(self, context):
-        _draw_mapping(self.layout, context.scene)
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# VISUAL SAMPLER
-# ════════════════════════════════════════════════════════════════════════════
-
-class SCORESYNC_PT_sampler(bpy.types.Panel):
-    bl_label       = "Visual Sampler"
-    bl_idname      = "SCORESYNC_PT_sampler"
-    bl_space_type  = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category    = "ScoreSync"
-    bl_parent_id   = "SCORESYNC_PT_main"
-    bl_options     = {'DEFAULT_CLOSED'}
-
-    def draw(self, context):
-        layout = self.layout
-        scene  = context.scene
-
-        # ── Active VSE strip mini-view (so you stay in 3D while monitoring) ──
-        seq = getattr(scene, "sequence_editor", None)
-        strip = seq.active_strip if seq else None
-        if strip:
-            box = layout.box()
-            row = box.row(align=True)
-            row.label(text=strip.name, icon='SEQUENCE')
-            row.label(text=f"Ch {strip.channel}  [{strip.frame_final_start}–{strip.frame_final_end}]")
-            col = box.column(align=True)
-            col.prop(strip, "blend_alpha",      text="Opacity")
-            col.prop(strip, "color_multiply",   text="Bright Mult")
-            col.prop(strip, "color_saturation", text="Saturation")
-            op = box.operator("scoresync.open_area", icon='SEQUENCE',
-                              text="Edit in Video Editor")
-            op.editor_type = 'SEQUENCE_EDITOR'
-        else:
-            row = layout.row(align=True)
-            row.label(text="No active VSE strip", icon='INFO')
-            op = row.operator("scoresync.open_area", icon='SEQUENCE',
-                              text="Open Video Editor")
-            op.editor_type = 'SEQUENCE_EDITOR'
-
-        layout.separator(factor=0.3)
-        _draw_sampler(layout, scene)
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# FX RACK (View3D — all types)
-# ════════════════════════════════════════════════════════════════════════════
-
-class SCORESYNC_PT_fx_v3d(bpy.types.Panel):
-    bl_label       = "FX Rack"
-    bl_idname      = "SCORESYNC_PT_fx_v3d"
-    bl_space_type  = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category    = "ScoreSync"
-    bl_parent_id   = "SCORESYNC_PT_main"
-    bl_options     = {'DEFAULT_CLOSED'}
-
-    def draw(self, context):
-        _draw_fx_rack(self.layout, context.scene)
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# MARKERS & MUSICAL UTILITIES
-# ════════════════════════════════════════════════════════════════════════════
-
-class SCORESYNC_PT_utilities(bpy.types.Panel):
-    bl_label       = "Markers & Musical"
-    bl_idname      = "SCORESYNC_PT_utilities"
-    bl_space_type  = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category    = "ScoreSync"
-    bl_parent_id   = "SCORESYNC_PT_main"
-    bl_options     = {'DEFAULT_CLOSED'}
-
-    def draw(self, context):
-        layout = self.layout
-        scene  = context.scene
-
-        col = layout.column(align=True)
-        col.label(text="Musical", icon='MUSIC')
-        row = col.row(align=True)
-        row.prop(scene, "scoresync_add_marker_every_bar", text="Bar Markers")
-        row.prop(scene, "scoresync_time_sig_n", text="Beats/Bar")
-
-        layout.separator(factor=0.5)
-        col = layout.column(align=True)
-        col.label(text="Markers", icon='MARKER_HLT')
-        row = col.row(align=True)
-        row.prop(scene, "scoresync_marker_preset", text="")
-        row.operator("scoresync.drop_preset_marker", icon='MARKER_HLT', text="Drop")
-        row = col.row(align=True)
-        row.operator("scoresync.jump_prev_marker", icon='TRIA_LEFT',  text="Prev")
-        row.operator("scoresync.jump_next_marker", icon='TRIA_RIGHT', text="Next")
-        col.operator("scoresync.rename_markers_bar_beat",
-                     icon='SORTSIZE', text="Rename → Bar:Beat")
-
-
-# ════════════════════════════════════════════════════════════════════════════
 # DIAGNOSTICS, PRESETS & TOOLS
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -700,9 +594,5 @@ view3d_panel_classes = (
     SCORESYNC_PT_connection,
     SCORESYNC_PT_transport,
     SCORESYNC_PT_master,
-    SCORESYNC_PT_mapping,
-    SCORESYNC_PT_sampler,
-    SCORESYNC_PT_fx_v3d,
-    SCORESYNC_PT_utilities,
     SCORESYNC_PT_diagnostics,
 )

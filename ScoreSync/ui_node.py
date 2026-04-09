@@ -73,7 +73,14 @@ class SCORESYNC_PT_node_main(bpy.types.Panel):
         else:
             layout.label(text="No material on active object.", icon='INFO')
 
+        # ScoreSync Editor button
+        layout.separator(factor=0.2)
+        col = layout.column(align=True)
+        col.scale_y = 1.5
+        col.operator("scoresync.open_editor", icon='NLA', text="Open ScoreSync Editor")
+
         # Quick editor jump
+        layout.separator(factor=0.2)
         row = layout.row(align=True)
         op_v3d = row.operator("scoresync.open_area", icon='VIEW3D',  text="→ 3D View")
         op_v3d.editor_type = 'VIEW_3D'
