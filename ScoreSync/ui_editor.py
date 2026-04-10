@@ -115,11 +115,14 @@ def _draw_sampler_editor(layout, scene):
                 cell = grid.column(align=True)
 
                 if icon_id:
-                    # Thumbnail fills the pad body
-                    cell.template_icon(icon_value=icon_id, scale=4.8)
-                    # Thin bottom strip: name + fire
+                    # Full-bleed thumbnail (display — Blender template_icon is non-interactive)
+                    thumb = cell.row(align=True)
+                    thumb.alert = is_sel          # tints border gold when selected
+                    thumb.template_icon(icon_value=icon_id, scale=4.5)
+
+                    # Slim fused strip: [select pad — most width] [▶ fire — right corner]
                     bot = cell.row(align=True)
-                    bot.scale_y = 0.85
+                    bot.scale_y = 0.65
                     op_sel = bot.operator(
                         "scoresync.sampler_select_pad",
                         text=label, depress=is_sel, emboss=True,
@@ -333,13 +336,14 @@ def _draw_fx_editor(layout, scene):
         row.prop(slot, "value_min", text="Min")
         row.prop(slot, "value_max", text="Max")
 
-        key = (slot.midi_type, slot.midi_channel, slot.midi_num)
-        raw = DEV_MAP.last_val.get(key)
-        if raw is not None:
-            box.label(
-                text=f"Live MIDI: {raw}  →  {slot.current_value:.4f}",
-                icon='DECORATE_ANIMATE',
-            )
+        if slot.enabled:
+            key = (slot.midi_type, slot.midi_channel, slot.midi_num)
+            raw = DEV_MAP.last_val.get(key)
+            if raw is not None:
+                box.label(
+                    text=f"Live MIDI: {raw}  →  {slot.current_value:.4f}",
+                    icon='DECORATE_ANIMATE',
+                )
     else:
         right.label(text="Select a slot to edit.", icon='INFO')
 
@@ -389,7 +393,15 @@ def _draw_mapping_editor(layout, scene):
     else:
         for i, m in enumerate(mappings):
             is_sel = (i == active_map_idx)
+            target_missing = m.id_name and not (
+                (m.id_type == "OBJECT"   and bpy.data.objects.get(m.id_name)) or
+                (m.id_type == "SCENE"    and bpy.data.scenes.get(m.id_name)) or
+                (m.id_type == "MATERIAL" and bpy.data.materials.get(m.id_name)) or
+                (m.id_type == "WORLD"    and bpy.data.worlds.get(m.id_name)) or
+                (m.id_type == "CAMERA"   and bpy.data.objects.get(m.id_name))
+            )
             row = left.row(align=True)
+            row.alert = target_missing
             row.prop(m, "enabled", text="")
             op = row.operator(
                 "scoresync.mapping_select",
@@ -431,18 +443,33 @@ def _draw_mapping_editor(layout, scene):
         box.prop(m, "id_name",   text="Datablock")
         box.prop(m, "data_path", text="Path")
 
+        # Missing target warning
+        if m.id_name:
+            exists = bool(
+                (m.id_type == "OBJECT"   and bpy.data.objects.get(m.id_name)) or
+                (m.id_type == "SCENE"    and bpy.data.scenes.get(m.id_name)) or
+                (m.id_type == "MATERIAL" and bpy.data.materials.get(m.id_name)) or
+                (m.id_type == "WORLD"    and bpy.data.worlds.get(m.id_name)) or
+                (m.id_type == "CAMERA"   and bpy.data.objects.get(m.id_name))
+            )
+            if not exists:
+                err = box.row()
+                err.alert = True
+                err.label(text=f'"{m.id_name}" not found in scene', icon='ERROR')
+
         box.separator(factor=0.4)
         row = box.row(align=True)
         row.prop(m, "value_min", text="Min")
         row.prop(m, "value_max", text="Max")
 
-        key = (m.midi_type, m.channel, m.midi_num)
-        raw = DEV_MAP.last_val.get(key)
-        if raw is not None:
-            box.label(
-                text=f"Live: raw {raw}  →  {_midi_to_value(raw, m.value_min, m.value_max):.4f}",
-                icon='DECORATE_ANIMATE',
-            )
+        if m.enabled:
+            key = (m.midi_type, m.channel, m.midi_num)
+            raw = DEV_MAP.last_val.get(key)
+            if raw is not None:
+                box.label(
+                    text=f"Live: raw {raw}  →  {_midi_to_value(raw, m.value_min, m.value_max):.4f}",
+                    icon='DECORATE_ANIMATE',
+                )
     else:
         right.label(text="Select a mapping to edit.", icon='INFO')
 

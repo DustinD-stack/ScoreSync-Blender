@@ -2,6 +2,7 @@
 # MIDI I/O, listener thread, main-thread apply, LED, auto-reconnect, and FL script health.
 
 import bpy
+import collections
 import threading, time
 
 # ---- mido loader -----------------------------------------------------------
@@ -153,7 +154,7 @@ def _get_bpm(scene) -> float:
 
 
 # ---- Queue + small helpers --------------------------------------------------
-_message_queue = []  # list[(ts, msg_dict)]
+_message_queue = collections.deque()  # deque[(ts, msg_dict)] — O(1) popleft
 _QLOCK = threading.Lock()
 _LISTENER_GEN = 0
 
@@ -170,8 +171,8 @@ def _dbg(scene, text, min_dt=0.0):
 def _enqueue(msg):
     with _QLOCK:
         _message_queue.append((time.time(), msg))
-        if len(_message_queue) > 512:      # cap backlog
-            del _message_queue[:-256]      # drop oldest, keep newest
+        while len(_message_queue) > 512:   # cap backlog — drop oldest
+            _message_queue.popleft()
 
 def _toggle_playing(play_wanted: bool):
     try:
@@ -492,24 +493,26 @@ def scoresync_timer():
         now = time.time()
         with _QLOCK:
             while _message_queue and (now - _message_queue[0][0]) > 5.0:
-                _message_queue.pop(0)
+                _message_queue.popleft()
 
         # Drain queue (prioritize transport/SPP over clock)
         n = 0
         with _QLOCK:
-            # If backlog grows, drop old clock ticks first (keep newest clocks)
+            # If backlog grows, drop excess clock ticks (keep newest 64 clocks)
             if len(_message_queue) > 256:
                 clocks_kept = 0
                 new_q = []
-                for ts, msg in reversed(_message_queue):
-                    t = msg.get("type")
+                for item in reversed(_message_queue):  # newest → oldest
+                    t = item[1].get("type")
                     if t == "clock":
                         if clocks_kept < 64:
-                            new_q.append((ts, msg))
+                            new_q.append(item)
                             clocks_kept += 1
                     else:
-                        new_q.append((ts, msg))
-                _message_queue[:] = list(reversed(new_q))
+                        new_q.append(item)
+                new_q.reverse()  # restore oldest → newest order
+                _message_queue.clear()
+                _message_queue.extend(new_q)
 
             while _message_queue and n < 64:
                 ts, msg = _message_queue[0]
@@ -518,7 +521,7 @@ def scoresync_timer():
                 except Exception:
                     result = True   # discard broken message, keep timer alive
                 if result:
-                    _message_queue.pop(0)
+                    _message_queue.popleft()
                 else:
                     break
                 n += 1
@@ -529,15 +532,15 @@ def scoresync_timer():
 
     # ---- MIDI Mapping apply tick (v2.0) ----
     try:
-        from .ops_mapping import apply_mappings_tick
-        apply_mappings_tick(scene)
+        from . import ops_mapping as _ops_mapping
+        _ops_mapping.apply_mappings_tick(scene)
     except Exception:
         pass
 
     # ---- FX Rack apply tick (v2.0) ----
     try:
-        from .ops_fx import apply_fx_tick
-        apply_fx_tick(scene)
+        from . import ops_fx as _ops_fx
+        _ops_fx.apply_fx_tick(scene)
     except Exception:
         pass
 
@@ -577,6 +580,14 @@ def _listener_loop(port_name, gen):
     if not mido:
         _enqueue({"type":"error","err":"mido not available"})
         return
+
+    # Cache module-level callables once per thread (avoids re-import on every message)
+    try:
+        from .ops_mapping import ingest_midi_for_mapping as _ingest_mapping
+        from .ops_fx import capture_fx_learn as _capture_fx
+    except Exception:
+        _ingest_mapping = _capture_fx = None
+
     try:
         DEV.listener_running = True
         with mido.open_input(port_name) as inport:
@@ -617,28 +628,28 @@ def _listener_loop(port_name, gen):
 
                 # ---- MIDI Mapping Layer + FX Rack (v2.0) ----
                 if msg.type == "control_change":
-                    try:
-                        from .ops_mapping import ingest_midi_for_mapping
-                        ingest_midi_for_mapping("CC", msg.channel, msg.control, msg.value)
-                    except Exception:
-                        pass
-                    try:
-                        from .ops_fx import capture_fx_learn
-                        capture_fx_learn("CC", msg.channel, msg.control)
-                    except Exception:
-                        pass
+                    if _ingest_mapping:
+                        try:
+                            _ingest_mapping("CC", msg.channel, msg.control, msg.value)
+                        except Exception:
+                            pass
+                    if _capture_fx:
+                        try:
+                            _capture_fx("CC", msg.channel, msg.control)
+                        except Exception:
+                            pass
 
                 elif msg.type == "note_on":
-                    try:
-                        from .ops_mapping import ingest_midi_for_mapping
-                        ingest_midi_for_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
-                    except Exception:
-                        pass
-                    try:
-                        from .ops_fx import capture_fx_learn
-                        capture_fx_learn("NOTE_ON", msg.channel, msg.note)
-                    except Exception:
-                        pass
+                    if _ingest_mapping:
+                        try:
+                            _ingest_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        except Exception:
+                            pass
+                    if _capture_fx:
+                        try:
+                            _capture_fx("NOTE_ON", msg.channel, msg.note)
+                        except Exception:
+                            pass
                     # Enqueue for sampler + FX (must fire on main thread)
                     _enqueue({"type": "note_on", "channel": msg.channel,
                               "note": msg.note, "velocity": msg.velocity})
@@ -693,6 +704,95 @@ def _health_listener_loop(port_name):
     finally:
         DEV.health_listener_running = False
         DEV.health_in_port = None
+
+
+# ── Universal MIDI learn scanner ─────────────────────────────────────────────
+# When learn mode is active we open a lightweight listener on every available
+# MIDI input port (excluding the one already open as the main F2B listener) so
+# the user can move ANY connected controller without having to route it through
+# loopMIDI.  Threads are stopped as soon as learn captures an event.
+
+_learn_scan_stop  = threading.Event()
+_learn_scan_threads: list = []
+
+
+def _learn_scan_loop(port_name):
+    """Lightweight thread: feed CC / Note On into the learn functions only."""
+    mido = _get_mido()
+    if not mido:
+        return
+
+    try:
+        from .ops_mapping import ingest_midi_for_mapping as _ingest_mapping
+        from .ops_fx import capture_fx_learn as _capture_fx
+    except Exception:
+        _ingest_mapping = _capture_fx = None
+
+    try:
+        with mido.open_input(port_name) as inport:
+            print(f"[ScoreSync] LearnScan opened: {port_name}")
+            for msg in inport:
+                if _learn_scan_stop.is_set():
+                    break
+                try:
+                    if msg.type == "control_change":
+                        if _ingest_mapping:
+                            _ingest_mapping("CC", msg.channel, msg.control, msg.value)
+                        if _capture_fx:
+                            _capture_fx("CC", msg.channel, msg.control)
+                    elif msg.type == "note_on" and msg.velocity > 0:
+                        if _ingest_mapping:
+                            _ingest_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        if _capture_fx:
+                            _capture_fx("NOTE_ON", msg.channel, msg.note)
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[ScoreSync] LearnScan failed ({port_name}): {e}")
+
+
+def start_learn_scan():
+    """Open temporary listeners on all MIDI inputs not already used by the main listener."""
+    global _learn_scan_threads
+    stop_learn_scan()  # clean up any stale scan
+
+    mido = _get_mido()
+    if not mido:
+        return
+
+    try:
+        all_ports = mido.get_input_names()
+    except Exception:
+        return
+
+    # Ports already open by the main listener — skip them to avoid double-open errors
+    skip = set()
+    if DEV.in_port_name:
+        skip.add(DEV.in_port_name)
+    if DEV.health_port_name:
+        skip.add(DEV.health_port_name)
+
+    _learn_scan_stop.clear()
+    _learn_scan_threads = []
+
+    for name in all_ports:
+        if name in skip:
+            continue
+        t = threading.Thread(target=_learn_scan_loop, args=(name,), daemon=True)
+        t.start()
+        _learn_scan_threads.append(t)
+
+    print(f"[ScoreSync] LearnScan started on {len(_learn_scan_threads)} extra port(s)")
+
+
+def stop_learn_scan():
+    """Signal all learn-scan threads to stop and clear the list."""
+    global _learn_scan_threads
+    _learn_scan_stop.set()
+    # Threads will exit on next message or when the port is closed; we don't join
+    # (blocking the main thread is worse than a brief orphan).
+    _learn_scan_threads = []
+    print("[ScoreSync] LearnScan stopped")
 
 
 # ---- Operators --------------------------------------------------------------
@@ -797,6 +897,11 @@ class SCORESYNC_OT_connect(bpy.types.Operator):
             DEV.clock_total = 0
             DEV.clocks_in_bar = 0
             DEV.bar_index = 1
+            try:
+                from .ops_mapping import DEV_MAP
+                DEV_MAP.last_val.clear()
+            except Exception:
+                pass
             global _LISTENER_GEN
             _LISTENER_GEN += 1
             gen = _LISTENER_GEN

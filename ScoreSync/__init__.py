@@ -159,7 +159,7 @@ def register_props():
         description="When on, incoming MIDI Clock drives Blender’s frame"
     )
     scene.scoresync_reset_on_start = bpy.props.BoolProperty(
-        name="Reset on Start", default=True,
+        name="Reset on Start", default=False,
         description="On MIDI Start, jump to frame 0 before playing"
     )
 

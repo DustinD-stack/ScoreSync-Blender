@@ -144,6 +144,12 @@ def apply_mappings_tick(scene):
     # ── Auto-assign after learn capture ──────────────────────────────────────
     if DEV_MAP.capture_dirty and DEV_MAP.pending_type:
         DEV_MAP.capture_dirty = False
+        # Stop universal scan — we got our event
+        try:
+            from .ops_connection import stop_learn_scan
+            stop_learn_scan()
+        except Exception:
+            pass
         mappings = getattr(scene, "scoresync_mappings", None)
         idx = DEV_MAP.target_idx
         if mappings and 0 <= idx < len(mappings):
@@ -239,6 +245,11 @@ class SCORESYNC_OT_mapping_learn_start(bpy.types.Operator):
         DEV_MAP.target_idx    = getattr(context.scene, "scoresync_mapping_index", -1)
         context.scene.scoresync_mapping_learn_status = "Listening… touch any control on your device"
         self.report({'INFO'}, "Learn mode ON — touch a pad, knob, or button")
+        try:
+            from .ops_connection import start_learn_scan
+            start_learn_scan()
+        except Exception:
+            pass
         return {'FINISHED'}
 
 
@@ -249,6 +260,11 @@ class SCORESYNC_OT_mapping_learn_cancel(bpy.types.Operator):
     def execute(self, context):
         DEV_MAP.learning = False
         context.scene.scoresync_mapping_learn_status = ""
+        try:
+            from .ops_connection import stop_learn_scan
+            stop_learn_scan()
+        except Exception:
+            pass
         return {'FINISHED'}
 
 

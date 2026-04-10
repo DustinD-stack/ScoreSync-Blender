@@ -322,6 +322,11 @@ def capture_fx_learn(midi_type: str, channel: int, num: int):
         "num":  num,
     }
     DEV_FX.learning_slot = -1
+    try:
+        from .ops_connection import stop_learn_scan
+        stop_learn_scan()
+    except Exception:
+        pass
 
 
 # ── Material setup operator ───────────────────────────────────────────────────
@@ -488,6 +493,11 @@ class SCORESYNC_OT_fx_learn_start(bpy.types.Operator):
         DEV_FX.learning_slot = self.index
         context.scene.scoresync_fx_learn_status = f"Waiting… move a control for slot {self.index+1}"
         self.report({'INFO'}, f"FX Learn: waiting for MIDI on slot {self.index+1}")
+        try:
+            from .ops_connection import start_learn_scan
+            start_learn_scan()
+        except Exception:
+            pass
         return {'FINISHED'}
 
 
@@ -498,6 +508,11 @@ class SCORESYNC_OT_fx_learn_cancel(bpy.types.Operator):
     def execute(self, context):
         DEV_FX.learning_slot = -1
         context.scene.scoresync_fx_learn_status = ""
+        try:
+            from .ops_connection import stop_learn_scan
+            stop_learn_scan()
+        except Exception:
+            pass
         return {'FINISHED'}
 
 
