@@ -14,6 +14,7 @@ import time
 # ---- Imports ---------------------------------------------------------------
 from .ui_panel import view3d_panel_classes
 from .ui_editor import editor_classes
+from .ops_context import context_classes, register_context_menu, unregister_context_menu
 
 from .ui_vse import (
     SCORESYNC_PT_vse_main,
@@ -483,6 +484,9 @@ classes = (
     SCORESYNC_OT_sampler_reload_cache,
     SCORESYNC_OT_sampler_reset_pad,
 
+    # v2.0 — Right-click context learn
+    *context_classes,
+
     # v2.0 — FX Rack
     SCORESYNC_OT_fx_setup_material,
     SCORESYNC_OT_fx_add_slot,
@@ -523,6 +527,9 @@ def register():
     if _load_post_handler not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(_load_post_handler)
 
+    # Right-click context menu (v2.0)
+    register_context_menu()
+
 
 def unregister():
     # Remove load_post handler
@@ -546,6 +553,9 @@ def unregister():
         bpy.app.timers.unregister(_auto_restore_timer)
     except Exception:
         pass
+
+    # Right-click context menu
+    unregister_context_menu()
 
     unregister_props()
 
