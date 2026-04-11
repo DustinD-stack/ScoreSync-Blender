@@ -456,11 +456,35 @@ class SCORESYNC_OT_mapping_import(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class SCORESYNC_OT_mapping_clear_binding(bpy.types.Operator):
+    """Clear the MIDI binding from this mapping slot (keeps the target property)"""
+    bl_idname  = "scoresync.mapping_clear_binding"
+    bl_label   = "Reset MIDI Binding"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    index: bpy.props.IntProperty(default=-1)
+
+    def execute(self, context):
+        scene    = context.scene
+        mappings = getattr(scene, "scoresync_mappings", None)
+        idx      = self.index if self.index >= 0 else getattr(scene, "scoresync_mapping_index", -1)
+        if not mappings or idx < 0 or idx >= len(mappings):
+            return {'CANCELLED'}
+        m           = mappings[idx]
+        m.midi_type = "CC"
+        m.channel   = 0
+        m.midi_num  = 0
+        scene.scoresync_mapping_learn_status = f"Binding cleared for \"{m.label}\""
+        self.report({'INFO'}, f"MIDI binding cleared: {m.label}")
+        return {'FINISHED'}
+
+
 # ── Registration list (imported by __init__.py) ───────────────────────────────
 mapping_classes = (
     ScoreSyncMapping,
     SCORESYNC_OT_mapping_learn_start,
     SCORESYNC_OT_mapping_learn_cancel,
+    SCORESYNC_OT_mapping_clear_binding,
     SCORESYNC_OT_mapping_assign,
     SCORESYNC_OT_mapping_select,
     SCORESYNC_OT_mapping_add,

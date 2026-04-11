@@ -322,7 +322,11 @@ def _draw_fx_editor(layout, scene):
             op_bind.index = active_fx
 
         box.separator(factor=0.3)
-        box.label(text="Current binding:", icon='DRIVER')
+        hdr = box.row(align=True)
+        hdr.label(text="Current binding:", icon='DRIVER')
+        op_clr = hdr.operator("scoresync.fx_clear_binding",
+                              text="", icon='UNLINKED', emboss=False)
+        op_clr.index = active_fx
         row = box.row(align=True)
         row.prop(slot, "midi_type",    text="")
         row.prop(slot, "midi_channel", text="Ch")
@@ -428,7 +432,11 @@ def _draw_mapping_editor(layout, scene):
         box.prop(m, "enabled", text="Enabled")
 
         box.separator(factor=0.4)
-        box.label(text="MIDI Source:", icon='DRIVER')
+        hdr = box.row(align=True)
+        hdr.label(text="MIDI Source:", icon='DRIVER')
+        op_clr = hdr.operator("scoresync.mapping_clear_binding",
+                              text="", icon='UNLINKED', emboss=False)
+        op_clr.index = active_map_idx
         row = box.row(align=True)
         row.prop(m, "midi_type", text="")
         row.prop(m, "channel",   text="Ch")

@@ -516,6 +516,29 @@ class SCORESYNC_OT_fx_learn_cancel(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class SCORESYNC_OT_fx_clear_binding(bpy.types.Operator):
+    """Clear the MIDI binding from this FX slot (keeps all other settings)"""
+    bl_idname  = "scoresync.fx_clear_binding"
+    bl_label   = "Reset MIDI Binding"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    index: bpy.props.IntProperty(default=-1)
+
+    def execute(self, context):
+        scene    = context.scene
+        slots    = getattr(scene, "scoresync_fx_slots", None)
+        idx      = self.index if self.index >= 0 else getattr(scene, "scoresync_fx_index", -1)
+        if not slots or idx < 0 or idx >= len(slots):
+            return {'CANCELLED'}
+        slot             = slots[idx]
+        slot.midi_type   = "CC"
+        slot.midi_channel = 0
+        slot.midi_num    = 0
+        scene.scoresync_fx_learn_status = f"Binding cleared for \"{slot.label}\""
+        self.report({'INFO'}, f"MIDI binding cleared: {slot.label}")
+        return {'FINISHED'}
+
+
 class SCORESYNC_OT_fx_fire_slot(bpy.types.Operator):
     """Manually fire a note-type FX slot from the UI (test without hardware)."""
     bl_idname = "scoresync.fx_fire_slot"
@@ -602,6 +625,7 @@ fx_classes = (
     SCORESYNC_OT_fx_select_slot,
     SCORESYNC_OT_fx_learn_start,
     SCORESYNC_OT_fx_learn_cancel,
+    SCORESYNC_OT_fx_clear_binding,
     SCORESYNC_OT_fx_fire_slot,
     SCORESYNC_OT_vse_setup_strip,
     SCORESYNC_OT_fx_add_for_channel,

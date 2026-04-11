@@ -91,6 +91,11 @@ def _draw_mapping(layout, scene, compact=False):
         insp.label(text=f"Edit: {m.label}", icon='PROPERTIES')
         insp.prop(m, "label",   text="Name")
         insp.prop(m, "enabled", text="Enabled")
+        midi_hdr = insp.row(align=True)
+        midi_hdr.label(text="MIDI Binding:")
+        op_clr = midi_hdr.operator("scoresync.mapping_clear_binding",
+                                   text="", icon='UNLINKED', emboss=False)
+        op_clr.index = active_map_idx
         row = insp.row(align=True)
         row.prop(m, "midi_type", text="")
         row.prop(m, "channel",   text="Ch")

@@ -711,12 +711,19 @@ def _health_listener_loop(port_name):
 # MIDI input port (excluding the one already open as the main F2B listener) so
 # the user can move ANY connected controller without having to route it through
 # loopMIDI.  Threads are stopped as soon as learn captures an event.
+#
+# Generation counter pattern (same as _LISTENER_GEN for the main listener):
+# Each call to start_learn_scan() bumps _LEARN_SCAN_GEN.  Threads receive
+# their generation at start and exit when it no longer matches — without
+# touching the stop event.  This avoids the race where stop_learn_scan()
+# sets the event, start_learn_scan() clears it, but old threads haven't
+# checked yet and continue holding WinMM exclusive-access ports.
 
-_learn_scan_stop  = threading.Event()
+_LEARN_SCAN_GEN   = 0
 _learn_scan_threads: list = []
 
 
-def _learn_scan_loop(port_name):
+def _learn_scan_loop(port_name, gen):
     """Lightweight thread: feed CC / Note On into the learn functions only."""
     mido = _get_mido()
     if not mido:
@@ -732,7 +739,7 @@ def _learn_scan_loop(port_name):
         with mido.open_input(port_name) as inport:
             print(f"[ScoreSync] LearnScan opened: {port_name}")
             for msg in inport:
-                if _learn_scan_stop.is_set():
+                if gen != _LEARN_SCAN_GEN:   # stale generation → exit and release port
                     break
                 try:
                     if msg.type == "control_change":
@@ -747,50 +754,62 @@ def _learn_scan_loop(port_name):
                             _capture_fx("NOTE_ON", msg.channel, msg.note)
                 except Exception:
                     pass
+            print(f"[ScoreSync] LearnScan closed: {port_name}")
     except Exception as e:
         print(f"[ScoreSync] LearnScan failed ({port_name}): {e}")
 
 
 def start_learn_scan():
     """Open temporary listeners on all MIDI inputs not already used by the main listener."""
-    global _learn_scan_threads
-    stop_learn_scan()  # clean up any stale scan
+    global _LEARN_SCAN_GEN, _learn_scan_threads
 
     mido = _get_mido()
     if not mido:
+        print("[ScoreSync] LearnScan: mido not available")
         return
 
     try:
         all_ports = mido.get_input_names()
-    except Exception:
+    except Exception as e:
+        print(f"[ScoreSync] LearnScan: cannot enumerate ports — {e}")
         return
 
-    # Ports already open by the main listener — skip them to avoid double-open errors
+    # Bump generation — existing threads will exit on their next message
+    _LEARN_SCAN_GEN += 1
+    gen = _LEARN_SCAN_GEN
+
+    # Ports already open by the main/health listener — skip to avoid WinMM conflict
     skip = set()
     if DEV.in_port_name:
         skip.add(DEV.in_port_name)
     if DEV.health_port_name:
         skip.add(DEV.health_port_name)
 
-    _learn_scan_stop.clear()
     _learn_scan_threads = []
+    skipped = []
 
     for name in all_ports:
         if name in skip:
+            skipped.append(name)
             continue
-        t = threading.Thread(target=_learn_scan_loop, args=(name,), daemon=True)
+        t = threading.Thread(target=_learn_scan_loop, args=(name, gen), daemon=True)
         t.start()
         _learn_scan_threads.append(t)
 
-    print(f"[ScoreSync] LearnScan started on {len(_learn_scan_threads)} extra port(s)")
+    print(f"[ScoreSync] LearnScan gen={gen} | scanning {len(_learn_scan_threads)} port(s): "
+          f"{[t.name for t in _learn_scan_threads]}")
+    if skipped:
+        print(f"[ScoreSync] LearnScan skipped (already open): {skipped}")
+    if not _learn_scan_threads and not skipped:
+        print("[ScoreSync] LearnScan: no MIDI input ports found — plug in controller and retry")
 
 
 def stop_learn_scan():
-    """Signal all learn-scan threads to stop and clear the list."""
-    global _learn_scan_threads
-    _learn_scan_stop.set()
-    # Threads will exit on next message or when the port is closed; we don't join
-    # (blocking the main thread is worse than a brief orphan).
+    """Retire the current scan generation; threads exit on their next message."""
+    global _LEARN_SCAN_GEN, _learn_scan_threads
+    _LEARN_SCAN_GEN += 1   # invalidate all running scan threads
+    _learn_scan_threads = []
+    print(f"[ScoreSync] LearnScan stopped (gen now {_LEARN_SCAN_GEN})")
     _learn_scan_threads = []
     print("[ScoreSync] LearnScan stopped")
 
