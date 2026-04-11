@@ -322,11 +322,7 @@ def capture_fx_learn(midi_type: str, channel: int, num: int):
         "num":  num,
     }
     DEV_FX.learning_slot = -1
-    try:
-        from .ops_connection import stop_learn_scan
-        stop_learn_scan()
-    except Exception:
-        pass
+    # Scan keeps running — controller must stay live for value delivery
 
 
 # ── Material setup operator ───────────────────────────────────────────────────
@@ -508,11 +504,6 @@ class SCORESYNC_OT_fx_learn_cancel(bpy.types.Operator):
     def execute(self, context):
         DEV_FX.learning_slot = -1
         context.scene.scoresync_fx_learn_status = ""
-        try:
-            from .ops_connection import stop_learn_scan
-            stop_learn_scan()
-        except Exception:
-            pass
         return {'FINISHED'}
 
 

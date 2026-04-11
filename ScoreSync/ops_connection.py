@@ -952,6 +952,10 @@ class SCORESYNC_OT_connect(bpy.types.Operator):
             except Exception:
                 pass
 
+        # Start permanent universal scanner — listens to all non-F2B ports
+        # so any USB controller delivers live values to mappings/FX at all times
+        start_learn_scan()
+
         return {'FINISHED'}
 
 class SCORESYNC_OT_reconnect_now(bpy.types.Operator):

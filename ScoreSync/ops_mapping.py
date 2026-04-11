@@ -144,12 +144,7 @@ def apply_mappings_tick(scene):
     # ── Auto-assign after learn capture ──────────────────────────────────────
     if DEV_MAP.capture_dirty and DEV_MAP.pending_type:
         DEV_MAP.capture_dirty = False
-        # Stop universal scan — we got our event
-        try:
-            from .ops_connection import stop_learn_scan
-            stop_learn_scan()
-        except Exception:
-            pass
+        # Scan keeps running — controller must stay live for value delivery
         mappings = getattr(scene, "scoresync_mappings", None)
         idx = DEV_MAP.target_idx
         if mappings and 0 <= idx < len(mappings):
@@ -260,11 +255,6 @@ class SCORESYNC_OT_mapping_learn_cancel(bpy.types.Operator):
     def execute(self, context):
         DEV_MAP.learning = False
         context.scene.scoresync_mapping_learn_status = ""
-        try:
-            from .ops_connection import stop_learn_scan
-            stop_learn_scan()
-        except Exception:
-            pass
         return {'FINISHED'}
 
 
