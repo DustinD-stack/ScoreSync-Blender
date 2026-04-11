@@ -747,11 +747,29 @@ def _learn_scan_loop(port_name, gen):
                             _ingest_mapping("CC", msg.channel, msg.control, msg.value)
                         if _capture_fx:
                             _capture_fx("CC", msg.channel, msg.control)
+
                     elif msg.type == "note_on" and msg.velocity > 0:
                         if _ingest_mapping:
                             _ingest_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
                         if _capture_fx:
                             _capture_fx("NOTE_ON", msg.channel, msg.note)
+                        # Fire FX rack note triggers (TOGGLE / MOMENTARY / FLASH)
+                        try:
+                            from . import ops_fx as _ops_fx
+                            _ops_fx.handle_note_on_fx(msg.channel, msg.note, msg.velocity)
+                        except Exception:
+                            pass
+
+                    elif msg.type in ("note_off",) or (msg.type == "note_on" and msg.velocity == 0):
+                        # Note Off — clear NOTE_ON value so momentary mappings release
+                        if _ingest_mapping:
+                            _ingest_mapping("NOTE_ON", msg.channel, msg.note, 0)
+                        try:
+                            from . import ops_fx as _ops_fx
+                            _ops_fx.handle_note_off_fx(msg.channel, msg.note)
+                        except Exception:
+                            pass
+
                 except Exception:
                     pass
             print(f"[ScoreSync] LearnScan closed: {port_name}")
@@ -919,6 +937,7 @@ class SCORESYNC_OT_connect(bpy.types.Operator):
             try:
                 from .ops_mapping import DEV_MAP
                 DEV_MAP.last_val.clear()
+                DEV_MAP.prev_raw.clear()
             except Exception:
                 pass
             global _LISTENER_GEN

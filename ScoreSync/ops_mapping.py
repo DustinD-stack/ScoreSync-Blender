@@ -47,6 +47,7 @@ class _MappingLearnState:
     capture_dirty  = False   # True once MIDI thread writes a capture
     target_idx     = -1      # mapping index to auto-assign when capture arrives
     last_val       = {}      # (type, ch, num) -> last raw value (0-127)
+    prev_raw       = {}      # (type, ch, num) -> raw value seen on last apply tick
 
 DEV_MAP = _MappingLearnState()
 
@@ -105,36 +106,76 @@ def _resolve_datablock(id_type: str, id_name: str, context=None):
 
 def _set_property(block, data_path: str, value: float) -> bool:
     """
-    Set block.data_path = value, handling dotted paths like 'location.x'
-    and indexed paths like 'location[0]'.
+    Set block.data_path = value, handling dotted paths, indexed paths,
+    and boolean RNA properties (float >= 0.5 → True).
     Returns True on success.
     """
     try:
-        # Split off the last component
         parts = data_path.rsplit(".", 1)
         if len(parts) == 2:
             parent = block.path_resolve(parts[0])
-            attr = parts[1]
+            attr   = parts[1]
         else:
             parent = block
-            attr = parts[0]
+            attr   = parts[0]
 
-        # Handle index notation: attr[0]
-        if "[" in attr:
+        # Indexed: e.g. default_value[3]  or  location[0]
+        if "[" in attr and not attr.startswith("["):
             name, idx_str = attr.split("[", 1)
             idx = int(idx_str.rstrip("]"))
             obj = getattr(parent, name)
             obj[idx] = value
+            return True
+
+        # Detect RNA type to handle booleans correctly
+        try:
+            rna_prop = parent.bl_rna.properties.get(attr)
+        except Exception:
+            rna_prop = None
+
+        if rna_prop and rna_prop.type == 'BOOLEAN':
+            setattr(parent, attr, value >= 0.5)
+        elif rna_prop and rna_prop.type == 'INT':
+            setattr(parent, attr, int(round(value)))
         else:
             setattr(parent, attr, value)
         return True
-    except Exception:
+    except Exception as e:
+        print(f"[ScoreSync] _set_property failed ({data_path}): {e}")
         return False
 
 
 def _midi_to_value(raw: int, v_min: float, v_max: float) -> float:
     t = max(0, min(127, raw)) / 127.0
     return v_min + t * (v_max - v_min)
+
+
+def _toggle_if_bool(block, data_path: str) -> bool:
+    """
+    If data_path resolves to a boolean RNA property, toggle it.
+    For non-boolean paths, does nothing (caller falls through to _set_property).
+    Returns True if a toggle was applied.
+    """
+    try:
+        parts = data_path.rsplit(".", 1)
+        if len(parts) == 2:
+            parent = block.path_resolve(parts[0])
+            attr   = parts[1]
+        else:
+            parent = block
+            attr   = parts[0]
+
+        try:
+            rna_prop = parent.bl_rna.properties.get(attr)
+        except Exception:
+            rna_prop = None
+
+        if rna_prop and rna_prop.type == 'BOOLEAN':
+            setattr(parent, attr, not getattr(parent, attr, False))
+            return True
+    except Exception as e:
+        print(f"[ScoreSync] _toggle_if_bool failed ({data_path}): {e}")
+    return False
 
 
 # ── Apply tick (called from scoresync_timer) ──────────────────────────────────
@@ -174,9 +215,39 @@ def apply_mappings_tick(scene):
         raw = DEV_MAP.last_val.get(key)
         if raw is None:
             continue
+
+        prev = DEV_MAP.prev_raw.get(key)
+        if raw == prev:
+            continue  # no change since last tick — nothing to do
+        DEV_MAP.prev_raw[key] = raw
+
         block = _resolve_datablock(m.id_type, m.id_name)
         if block is None:
             continue
+
+        # NOTE_ON button → boolean: TOGGLE on rising edge only
+        if m.midi_type == "NOTE_ON":
+            if raw > 0:
+                # Rising edge — try boolean toggle first
+                if not _toggle_if_bool(block, m.data_path):
+                    # Non-boolean: set to value_max on press
+                    _set_property(block, m.data_path, m.value_max)
+            else:
+                # Note off — for non-boolean paths set to value_min (momentary)
+                try:
+                    parts = m.data_path.rsplit(".", 1)
+                    parent = block.path_resolve(parts[0]) if len(parts) == 2 else block
+                    attr   = parts[1] if len(parts) == 2 else parts[0]
+                    rna_prop = parent.bl_rna.properties.get(attr)
+                    if rna_prop and rna_prop.type == 'BOOLEAN':
+                        pass  # booleans are toggled on press, don't reset on release
+                    else:
+                        _set_property(block, m.data_path, m.value_min)
+                except Exception:
+                    pass
+            continue
+
+        # CC → continuous map
         value = _midi_to_value(raw, m.value_min, m.value_max)
         _set_property(block, m.data_path, value)
 
