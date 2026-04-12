@@ -2,19 +2,26 @@
 ScoreSync v2 — ops_context.py
 Right-click context menu integration.
 
-Appends "ScoreSync: Learn MIDI for This" to Blender's universal property
-right-click menu (WM_MT_button_context).  Works on any numeric slider,
-toggle, colour channel, or enum in ANY editor — modifiers, shader nodes,
-render settings, physics, compositor, etc.
+Property widgets (sliders, toggles, number fields)
+---------------------------------------------------
+  context.button_pointer + context.button_prop are set → "Learn MIDI for This"
+  creates a MIDI mapping slot auto-filled from the RNA property.
+  Works anywhere in Blender: shader nodes, render settings, modifiers, etc.
+  Right-click the Current Frame field in the timeline → adds a Scrub Frame
+  mapping; switch its Encoder Mode to Relative for a rotary encoder.
 
-Flow
-----
-1. User right-clicks any property → menu appears with ScoreSync entry
-2. ScoreSync reads context.button_pointer + context.button_prop to get the
-   exact datablock and RNA path automatically
-3. A new mapping slot is created for that property
-4. Learn mode starts — user touches any MIDI control to bind it
-5. Mapping is active immediately; no ScoreSync Editor needed
+Operator buttons (Play, Stop, Fire Pad, Select Pad, …)
+------------------------------------------------------
+  context.button_operator is set instead of button_prop.
+  ScoreSync detects which operator was right-clicked and offers the
+  appropriate transport-bind or pad-learn action.
+
+  Supported:
+    scoresync.tx_play           → Learn MIDI for Play
+    scoresync.tx_stop           → Learn MIDI for Stop
+    screen.marker_jump(next=T)  → handled via Next/Prev Marker transport bind
+    scoresync.sampler_fire_pad  → Learn MIDI Trigger for Pad
+    scoresync.sampler_select_pad→ Learn MIDI Note for Pad
 """
 
 import bpy
@@ -27,34 +34,43 @@ _ID_TYPE_MAP = (
     (bpy.types.Scene,    "SCENE"),
     (bpy.types.Material, "MATERIAL"),
     (bpy.types.World,    "WORLD"),
-    (bpy.types.Camera,   "OBJECT"),   # cameras are Objects in the mapping layer
+    (bpy.types.Camera,   "OBJECT"),
 )
 
 def _resolve_id(ptr):
-    """Return (id_type_str, id_name, data_path_from_id) or None."""
+    """Return (id_data, id_type_str) or None."""
     try:
         id_data = ptr.id_data
     except Exception:
         return None
-
-    id_type = "OBJECT"  # fallback
+    id_type = "OBJECT"
     for blender_type, type_str in _ID_TYPE_MAP:
         if isinstance(id_data, blender_type):
             id_type = type_str
             break
-
     return id_data, id_type
 
 
-# ── Operator ──────────────────────────────────────────────────────────────────
+# ── Operator struct name → transport target ───────────────────────────────────
+# Maps the Python class name of an operator (type(button_operator).__name__)
+# to the corresponding TransportMidiBind target id and menu label.
+
+_TP_BUTTON_MAP = {
+    "SCORESYNC_OT_play":             ("PLAY",        "Learn MIDI for Play"),
+    "SCORESYNC_OT_stop":             ("STOP",        "Learn MIDI for Stop"),
+    "SCORESYNC_OT_jump_next_marker": ("NEXT_MARKER", "Learn MIDI for Next Marker"),
+    "SCORESYNC_OT_jump_prev_marker": ("PREV_MARKER", "Learn MIDI for Prev Marker"),
+}
+
+
+# ── Property learn operator ───────────────────────────────────────────────────
 
 class SCORESYNC_OT_context_learn(bpy.types.Operator):
-    """Assign a MIDI control to this property — ScoreSync will listen for the next touch"""
+    """Assign a MIDI control to this property — ScoreSync listens for the next touch"""
     bl_idname  = "scoresync.context_learn"
     bl_label   = "ScoreSync: Learn MIDI for This"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # Stored at invoke time while context.button_* is still valid
     _id_type  : bpy.props.StringProperty(options={'HIDDEN'})
     _id_name  : bpy.props.StringProperty(options={'HIDDEN'})
     _data_path: bpy.props.StringProperty(options={'HIDDEN'})
@@ -79,22 +95,18 @@ class SCORESYNC_OT_context_learn(bpy.types.Operator):
         self._id_type = id_type
         self._id_name = id_data.name
 
-        # Full RNA path relative to the ID datablock
         try:
-            struct_path = ptr.path_from_id()
-            pid         = prop.identifier
+            struct_path    = ptr.path_from_id()
+            pid            = prop.identifier
             self._data_path = f"{struct_path}.{pid}" if struct_path else pid
         except Exception:
             self._data_path = prop.identifier
 
-        # Human label
         self._label = prop.name or prop.identifier
 
-        # Auto-fill value range from RNA soft limits
         try:
             self._vmin = float(getattr(prop, "soft_min", 0.0))
             self._vmax = float(getattr(prop, "soft_max", 1.0))
-            # Clamp absurd ranges to something sensible
             if self._vmin <= -1e9:
                 self._vmin = 0.0
             if self._vmax >= 1e9:
@@ -113,7 +125,6 @@ class SCORESYNC_OT_context_learn(bpy.types.Operator):
             self.report({'ERROR'}, "ScoreSync not ready — connect first")
             return {'CANCELLED'}
 
-        # Create a new mapping slot pre-filled with the target property
         m           = mappings.add()
         m.label     = self._label
         m.id_type   = self._id_type
@@ -126,7 +137,6 @@ class SCORESYNC_OT_context_learn(bpy.types.Operator):
         idx = len(mappings) - 1
         scene.scoresync_mapping_index = idx
 
-        # Arm learn mode
         DEV_MAP.learning      = True
         DEV_MAP.capture_dirty = False
         DEV_MAP.target_idx    = idx
@@ -134,45 +144,190 @@ class SCORESYNC_OT_context_learn(bpy.types.Operator):
             f"Listening… touch any MIDI control to bind → {self._label}"
         )
 
-        # Open universal MIDI scanner so ANY connected device is heard
         try:
             from .ops_connection import start_learn_scan
             start_learn_scan()
         except Exception:
             pass
 
-        self.report(
-            {'INFO'},
-            f"ScoreSync: touch a pad/knob to bind MIDI → '{self._label}'"
+        self.report({'INFO'}, f"ScoreSync: touch a control to bind → '{self._label}'")
+        return {'FINISHED'}
+
+
+# ── Pad learn via right-click ─────────────────────────────────────────────────
+
+class SCORESYNC_OT_context_learn_pad(bpy.types.Operator):
+    """Learn the MIDI note that triggers or selects this sampler pad"""
+    bl_idname   = "scoresync.context_learn_pad"
+    bl_label    = "ScoreSync: Learn MIDI for Pad"
+    bl_options  = {'REGISTER'}
+
+    bank_index: bpy.props.IntProperty(default=0, options={'HIDDEN'})
+    pad_index : bpy.props.IntProperty(default=0, options={'HIDDEN'})
+
+    def execute(self, context):
+        try:
+            from .ops_sampler import DEV_PAD_LEARN
+        except Exception as e:
+            self.report({'ERROR'}, f"ScoreSync sampler not ready: {e}")
+            return {'CANCELLED'}
+
+        DEV_PAD_LEARN.learning      = True
+        DEV_PAD_LEARN.bank_idx      = self.bank_index
+        DEV_PAD_LEARN.pad_idx       = self.pad_index
+        DEV_PAD_LEARN.capture_dirty = False
+        context.scene.scoresync_sampler_learn_status = (
+            f"Listening for Pad {self.pad_index+1} (Bank {self.bank_index+1})… "
+            f"press any key or pad on your controller"
         )
+
+        try:
+            from .ops_connection import start_learn_scan
+            start_learn_scan()
+        except Exception:
+            pass
+
+        self.report({'INFO'},
+                    f"Pad learn: touch any pad/key to bind → pad {self.pad_index+1}")
+        return {'FINISHED'}
+
+
+# ── Transport learn via right-click ──────────────────────────────────────────
+
+class SCORESYNC_OT_context_learn_transport(bpy.types.Operator):
+    """Learn a MIDI button or knob for this transport action"""
+    bl_idname   = "scoresync.context_learn_transport"
+    bl_label    = "ScoreSync: Learn MIDI for Transport"
+    bl_options  = {'REGISTER'}
+
+    target: bpy.props.EnumProperty(
+        name="Target",
+        items=[
+            ("PLAY",        "Play",        ""),
+            ("STOP",        "Stop",        ""),
+            ("NEXT_MARKER", "Next Marker", ""),
+            ("PREV_MARKER", "Prev Marker", ""),
+        ],
+    )
+
+    def execute(self, context):
+        try:
+            from .ops_transport import DEV_TP
+        except Exception as e:
+            self.report({'ERROR'}, f"ScoreSync transport not ready: {e}")
+            return {'CANCELLED'}
+
+        DEV_TP.learning      = True
+        DEV_TP.target        = self.target
+        DEV_TP.capture_dirty = False
+        context.scene.scoresync_transport_learn_status = (
+            f"Listening for {self.target}… touch any button or knob"
+        )
+
+        try:
+            from .ops_connection import start_learn_scan
+            start_learn_scan()
+        except Exception:
+            pass
+
+        self.report({'INFO'}, f"Transport learn: {self.target} — touch a control")
         return {'FINISHED'}
 
 
 # ── Menu injection ────────────────────────────────────────────────────────────
 
 def _draw_context_menu(self, context):
-    """Appended to WM_MT_button_context — shows on every right-clicked property."""
-    ptr  = getattr(context, "button_pointer", None)
-    prop = getattr(context, "button_prop",    None)
+    """
+    Appended to WM_MT_button_context.
 
-    # Only show for driveable types (float, int, bool, enum)
-    if ptr is None or prop is None:
+    Three cases:
+      1. button_prop set     → property widget (slider/toggle): show property learn
+      2. button_operator set → operator button: show pad or transport learn
+      3. Neither             → nothing shown
+    """
+    ptr  = getattr(context, "button_pointer",  None)
+    prop = getattr(context, "button_prop",     None)
+    op   = getattr(context, "button_operator", None)
+    layout = self.layout
+
+    # ── Case 1: property widget ───────────────────────────────────────────────
+    if ptr is not None and prop is not None:
+        if prop.type not in ('FLOAT', 'INT', 'BOOLEAN', 'ENUM'):
+            return
+        layout.separator()
+        layout.operator(
+            "scoresync.context_learn",
+            icon='REC',
+            text="ScoreSync: Learn MIDI for This",
+        )
         return
-    if prop.type not in ('FLOAT', 'INT', 'BOOLEAN', 'ENUM'):
+
+    # ── Case 2: operator button ───────────────────────────────────────────────
+    if op is None:
         return
 
-    self.layout.separator()
-    self.layout.operator(
-        "scoresync.context_learn",
-        icon='REC',
-        text="ScoreSync: Learn MIDI for This",
-    )
+    op_type = type(op).__name__
+
+    # Transport buttons (Play, Stop, marker jump)
+    if op_type in _TP_BUTTON_MAP:
+        target, label = _TP_BUTTON_MAP[op_type]
+        layout.separator()
+        item = layout.operator(
+            "scoresync.context_learn_transport",
+            icon='REC',
+            text=f"ScoreSync: {label}",
+        )
+        item.target = target
+        return
+
+    # Sampler fire pad button
+    if op_type == "SCORESYNC_OT_sampler_fire_pad":
+        layout.separator()
+        item = layout.operator(
+            "scoresync.context_learn_pad",
+            icon='REC',
+            text="ScoreSync: Learn MIDI Trigger for this Pad",
+        )
+        item.bank_index = getattr(op, "bank_index", 0)
+        item.pad_index  = getattr(op, "pad_index",  0)
+        return
+
+    # Sampler select pad button
+    if op_type == "SCORESYNC_OT_sampler_select_pad":
+        layout.separator()
+        item = layout.operator(
+            "scoresync.context_learn_pad",
+            icon='REC',
+            text="ScoreSync: Learn MIDI Note for this Pad",
+        )
+        item.bank_index = getattr(context.scene, "scoresync_active_bank", 0)
+        item.pad_index  = getattr(op, "index", 0)
+        return
+
+    # Any other ScoreSync operator button — offer the full transport submenu
+    if op_type.startswith("SCORESYNC_OT_"):
+        layout.separator()
+        layout.label(text="ScoreSync: Bind Transport →", icon='REC')
+        for target_id, label in (
+            ("PLAY",        "Play"),
+            ("STOP",        "Stop"),
+            ("NEXT_MARKER", "Next Marker"),
+            ("PREV_MARKER", "Prev Marker"),
+        ):
+            item = layout.operator(
+                "scoresync.context_learn_transport",
+                icon='BLANK1',
+                text=label,
+            )
+            item.target = target_id
 
 
-# ── Registration helpers (called from __init__.py) ────────────────────────────
+# ── Registration ──────────────────────────────────────────────────────────────
 
 context_classes = (
     SCORESYNC_OT_context_learn,
+    SCORESYNC_OT_context_learn_pad,
+    SCORESYNC_OT_context_learn_transport,
 )
 
 def register_context_menu():

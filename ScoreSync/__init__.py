@@ -14,7 +14,14 @@ import time
 # ---- Imports ---------------------------------------------------------------
 from .ui_panel import view3d_panel_classes
 from .ui_editor import editor_classes
-from .ops_context import context_classes, register_context_menu, unregister_context_menu
+from .ops_context import (
+    context_classes,
+    register_context_menu,
+    unregister_context_menu,
+    SCORESYNC_OT_context_learn,
+    SCORESYNC_OT_context_learn_pad,
+    SCORESYNC_OT_context_learn_transport,
+)
 
 from .ui_vse import (
     SCORESYNC_PT_vse_main,
