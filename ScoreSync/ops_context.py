@@ -322,16 +322,134 @@ def _draw_context_menu(self, context):
             item.target = target_id
 
 
+# ── Timeline / Dopesheet / Sequencer scrub-learn ──────────────────────────────
+
+class SCORESYNC_OT_context_learn_scrub(bpy.types.Operator):
+    """
+    Add a frame_current mapping pre-configured for rotary encoder scrubbing.
+    Right-click the timeline ruler, dopesheet, or sequencer to use this.
+    Set Encoder Mode to Relative for a detented rotary knob.
+    """
+    bl_idname  = "scoresync.context_learn_scrub"
+    bl_label   = "ScoreSync: Learn MIDI Scrub (Encoder/Knob)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    frame_end: bpy.props.IntProperty(
+        name="Frame End",
+        description="Upper range for the scrub mapping",
+        default=500,
+        min=1,
+    )
+
+    def invoke(self, context, event):
+        # Use the scene's actual frame end as the default upper bound
+        self.frame_end = max(1, context.scene.frame_end)
+        return self.execute(context)
+
+    def execute(self, context):
+        from .ops_mapping import DEV_MAP
+
+        scene    = context.scene
+        mappings = getattr(scene, "scoresync_mappings", None)
+        if mappings is None:
+            self.report({'ERROR'}, "ScoreSync not ready — connect first")
+            return {'CANCELLED'}
+
+        m             = mappings.add()
+        m.label       = "Scrub Frame"
+        m.id_type     = "SCENE"
+        m.id_name     = "__SCENE__"
+        m.data_path   = "frame_current"
+        m.value_min   = float(scene.frame_start)
+        m.value_max   = float(self.frame_end)
+        m.midi_type   = "CC"
+        m.encoder_mode = "RELATIVE"
+        m.encoder_step = 1.0
+        m.enabled     = True
+
+        idx = len(mappings) - 1
+        scene.scoresync_mapping_index = idx
+
+        DEV_MAP.learning      = True
+        DEV_MAP.capture_dirty = False
+        DEV_MAP.target_idx    = idx
+        scene.scoresync_mapping_learn_status = (
+            "Listening… turn any rotary encoder to bind → Scrub Frame  "
+            "(switch Encoder Mode to Relative for detented knobs)"
+        )
+
+        try:
+            from .ops_connection import start_learn_scan
+            start_learn_scan()
+        except Exception:
+            pass
+
+        self.report({'INFO'},
+                    "ScoreSync: turn a knob/encoder to bind it to Scrub Frame")
+        return {'FINISHED'}
+
+
+def _draw_timeline_menu(self, context):
+    """Injected into the Timeline, Dopesheet, and Sequencer context menus."""
+    layout = self.layout
+    layout.separator()
+    layout.label(text="ScoreSync", icon='REC')
+    layout.operator(
+        "scoresync.context_learn_scrub",
+        icon='REC',
+        text="Learn MIDI Scrub (Knob / Encoder)",
+    )
+    # Quick transport binds for convenience
+    layout.separator()
+    for target_id, label in (
+        ("PLAY",        "Play"),
+        ("STOP",        "Stop"),
+        ("NEXT_MARKER", "Next Marker"),
+        ("PREV_MARKER", "Prev Marker"),
+    ):
+        item = layout.operator(
+            "scoresync.context_learn_transport",
+            icon='BLANK1',
+            text=f"Learn MIDI → {label}",
+        )
+        item.target = target_id
+
+
 # ── Registration ──────────────────────────────────────────────────────────────
 
 context_classes = (
     SCORESYNC_OT_context_learn,
     SCORESYNC_OT_context_learn_pad,
     SCORESYNC_OT_context_learn_transport,
+    SCORESYNC_OT_context_learn_scrub,
 )
+
+# Timeline editor menus that receive the scrub/transport injection.
+# Each is tried at register time; missing types are silently skipped so the
+# addon still loads on Blender versions that lack a particular menu.
+_TIMELINE_MENU_TYPES = (
+    "TIME_MT_editor_menus",   # Timeline header menus (4.x)
+    "TIME_MT_view",           # Timeline View menu
+    "DOPESHEET_MT_editor_menus",
+    "NLA_MT_editor_menus",
+    "SEQUENCER_MT_editor_menus",
+)
+
 
 def register_context_menu():
     bpy.types.WM_MT_button_context.append(_draw_context_menu)
+    for mt_name in _TIMELINE_MENU_TYPES:
+        mt = getattr(bpy.types, mt_name, None)
+        if mt is not None:
+            mt.append(_draw_timeline_menu)
+
 
 def unregister_context_menu():
     bpy.types.WM_MT_button_context.remove(_draw_context_menu)
+    for mt_name in _TIMELINE_MENU_TYPES:
+        mt = getattr(bpy.types, mt_name, None)
+        if mt is not None:
+            try:
+                mt.remove(_draw_timeline_menu)
+            except Exception:
+                pass

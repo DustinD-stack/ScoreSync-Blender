@@ -55,6 +55,7 @@ class _MappingLearnState:
     last_val       = {}      # (type, ch, num) -> latest raw value 0-127
     prev_raw       = {}      # (type, ch, num) -> raw seen on last apply tick
     toggle_state   = {}      # (type, ch, num) -> bool  (TOGGLE mode state)
+    encoder_accum  = {}      # ("CC", ch, num) -> accumulated offset (RELATIVE encoders)
 
 DEV_MAP = _MappingLearnState()
 
@@ -223,6 +224,15 @@ def apply_mappings_tick(scene) -> bool:
             continue
 
         key = (m.midi_type, m.channel, m.midi_num)
+
+        # RELATIVE encoder: bypass prev_raw guard — use accumulated offset instead
+        if m.midi_type == "CC" and getattr(m, "encoder_mode", "ABSOLUTE") == "RELATIVE":
+            if key in DEV_MAP.encoder_accum:
+                block = _resolve_datablock(m.id_type, m.id_name)
+                if block is not None:
+                    dirty |= _apply_encoder(m, block, key)
+            continue
+
         raw = DEV_MAP.last_val.get(key)
         if raw is None:
             continue
@@ -238,8 +248,6 @@ def apply_mappings_tick(scene) -> bool:
 
         if m.midi_type == "NOTE_ON":
             dirty |= _apply_note_on_mapping(m, block, key, raw, prev)
-        elif getattr(m, "encoder_mode", "ABSOLUTE") == "RELATIVE":
-            dirty |= _apply_encoder(m, block, key, raw)
         else:
             # CC absolute → continuous linear map
             if _set_property(block, m.data_path, _midi_to_value(raw, m.value_min, m.value_max)):
@@ -296,20 +304,17 @@ def _apply_note_on_mapping(m, block, key, raw: int, prev) -> bool:
     return False
 
 
-def _apply_encoder(m, block, key: tuple, raw: int) -> bool:
+def _apply_encoder(m, block, key: tuple) -> bool:
     """
-    Relative encoder handling.
-    Most encoders use offset-binary: center=64, >64=CW (+), <64=CCW (-).
-    Each message is a step, not an absolute position.
+    Relative encoder: consume the accumulated offset from encoder_accum.
 
-    After applying, reset last_val to 64 (center) so the same delta
-    doesn't re-fire on the next timer tick.
+    ingest_midi_for_mapping accumulates offset-binary CC deltas (centre=64)
+    into encoder_accum on every MIDI message.  Here we pop the total and
+    convert it to a property nudge — so no ticks are ever lost between
+    10 Hz timer fires, even at high encoder speed.
     """
-    if raw == 64:
-        return False  # no movement
-
-    # Dead-zone ±1 around center to ignore jitter
-    if 63 <= raw <= 65:
+    accum = DEV_MAP.encoder_accum.pop(key, 0.0)
+    if accum == 0.0:
         return False
 
     range_size = m.value_max - m.value_min
@@ -317,11 +322,8 @@ def _apply_encoder(m, block, key: tuple, raw: int) -> bool:
         return False
 
     step_pct = max(0.001, getattr(m, "encoder_step", 1.0) / 100.0)
-
-    # Offset from center: +1…+63 (CW), -1…-64 (CCW)
-    offset = raw - 64
-    # Scale: full-speed turn (offset ±63) = 1× step, slow nudge = fraction
-    delta = (offset / 63.0) * step_pct * range_size
+    # Scale: 63 accumulated units (one full-speed tick) = 1× step_pct of range
+    delta = (accum / 63.0) * step_pct * range_size
 
     parent, attr = _resolve_prop_parent(block, m.data_path)
     if parent is None:
@@ -330,11 +332,7 @@ def _apply_encoder(m, block, key: tuple, raw: int) -> bool:
     try:
         current = float(getattr(parent, attr, m.value_min))
         new_val = max(m.value_min, min(m.value_max, current + delta))
-        if _set_property(block, m.data_path, new_val):
-            # Reset to center so same raw doesn't re-fire next tick
-            DEV_MAP.last_val[key] = 64
-            DEV_MAP.prev_raw[key] = 64
-            return True
+        return _set_property(block, m.data_path, new_val)
     except Exception as e:
         print(f"[ScoreSync] encoder failed ({m.data_path}): {e}")
     return False
@@ -344,9 +342,16 @@ def ingest_midi_for_mapping(midi_type: str, channel: int, num: int, val: int):
     """
     Called from listener thread. Stores latest raw value; captures learn event.
     Dict assignment is atomic in CPython — no lock needed for last_val.
+
+    For CC messages also accumulates offset-binary delta into encoder_accum so
+    relative encoder mappings never lose steps between timer ticks.
     """
     key = (midi_type, channel, num)
     DEV_MAP.last_val[key] = val
+
+    # Relative encoder accumulation: centre=64, >64=CW(+), <64=CCW(-)
+    if midi_type == "CC" and val != 64:
+        DEV_MAP.encoder_accum[key] = DEV_MAP.encoder_accum.get(key, 0.0) + (val - 64)
 
     if DEV_MAP.learning:
         DEV_MAP.pending_type  = midi_type

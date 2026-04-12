@@ -586,6 +586,21 @@ def scoresync_timer():
     except Exception:
         pass
 
+    # Drain scan-loop note queue → fire sampler pads from USB controllers
+    # (The main F2B listener enqueues note_on via _apply_incoming; scan-loop
+    #  ports are not F2B-routed so they bypass that path — drain here instead.)
+    if _scan_note_queue:
+        try:
+            from .ops_sampler import ingest_note_for_sampler, DEV_SAMPLER, load_cache
+            if not DEV_SAMPLER.cache:
+                DEV_SAMPLER.cache = load_cache()
+            while _scan_note_queue:
+                ch, note, vel = _scan_note_queue.popleft()
+                ingest_note_for_sampler(ch, note, vel, scene)
+            _viewport_dirty = True
+        except Exception:
+            _scan_note_queue.clear()
+
     try:
         from . import ops_transport as _ops_transport
         if _ops_transport.apply_transport_midi_tick(scene):
@@ -776,6 +791,13 @@ def _health_listener_loop(port_name):
 _LEARN_SCAN_GEN   = 0
 _learn_scan_threads: list = []
 
+# Thread-safe queue for note-on events from the universal scan loop.
+# The learn scan loop runs on USB ports that the main F2B listener doesn't own.
+# To fire sampler pads from those ports we can't call bpy directly from the
+# thread, so we queue (channel, note, velocity) here and drain on the main
+# thread inside scoresync_timer.
+_scan_note_queue: collections.deque = collections.deque()
+
 
 def _learn_scan_loop(port_name, gen):
     """Lightweight thread: feed CC / Note On into the learn functions only."""
@@ -815,6 +837,8 @@ def _learn_scan_loop(port_name, gen):
                             _capture_pad("NOTE_ON", msg.channel, msg.note, msg.velocity)
                         if _capture_transport:
                             _capture_transport("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        # Queue for sampler pad fire on main thread
+                        _scan_note_queue.append((msg.channel, msg.note, msg.velocity))
                         # Fire FX rack note triggers (TOGGLE / MOMENTARY / FLASH)
                         try:
                             from . import ops_fx as _ops_fx
@@ -1001,6 +1025,7 @@ class SCORESYNC_OT_connect(bpy.types.Operator):
                 DEV_MAP.last_val.clear()
                 DEV_MAP.prev_raw.clear()
                 DEV_MAP.toggle_state.clear()
+                DEV_MAP.encoder_accum.clear()
                 try:
                     from .ops_transport import DEV_TP
                     DEV_TP.prev_raw.clear()
@@ -1008,6 +1033,7 @@ class SCORESYNC_OT_connect(bpy.types.Operator):
                     pass
             except Exception:
                 pass
+            _scan_note_queue.clear()
             global _LISTENER_GEN
             _LISTENER_GEN += 1
             gen = _LISTENER_GEN
