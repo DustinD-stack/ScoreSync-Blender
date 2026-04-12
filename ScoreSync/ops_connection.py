@@ -563,7 +563,7 @@ def scoresync_timer():
         pass  # never let the timer die — Blender deregisters on any uncaught exception
 
 
-    # ---- MIDI Mapping + FX apply ticks (v2.0) ----
+    # ---- MIDI Mapping + FX + Sampler learn + Transport ticks (v2.0) ----
     _viewport_dirty = False
     try:
         from . import ops_mapping as _ops_mapping
@@ -575,6 +575,20 @@ def scoresync_timer():
     try:
         from . import ops_fx as _ops_fx
         if _ops_fx.apply_fx_tick(scene):
+            _viewport_dirty = True
+    except Exception:
+        pass
+
+    try:
+        from . import ops_sampler as _ops_sampler
+        if _ops_sampler.apply_sampler_learn_tick(scene):
+            _viewport_dirty = True
+    except Exception:
+        pass
+
+    try:
+        from . import ops_transport as _ops_transport
+        if _ops_transport.apply_transport_midi_tick(scene):
             _viewport_dirty = True
     except Exception:
         pass
@@ -623,8 +637,10 @@ def _listener_loop(port_name, gen):
     try:
         from .ops_mapping import ingest_midi_for_mapping as _ingest_mapping
         from .ops_fx import capture_fx_learn as _capture_fx
+        from .ops_sampler import sampler_pad_learn_capture as _capture_pad
+        from .ops_transport import transport_learn_capture as _capture_transport
     except Exception:
-        _ingest_mapping = _capture_fx = None
+        _ingest_mapping = _capture_fx = _capture_pad = _capture_transport = None
 
     try:
         DEV.listener_running = True
@@ -770,8 +786,10 @@ def _learn_scan_loop(port_name, gen):
     try:
         from .ops_mapping import ingest_midi_for_mapping as _ingest_mapping
         from .ops_fx import capture_fx_learn as _capture_fx
+        from .ops_sampler import sampler_pad_learn_capture as _capture_pad
+        from .ops_transport import transport_learn_capture as _capture_transport
     except Exception:
-        _ingest_mapping = _capture_fx = None
+        _ingest_mapping = _capture_fx = _capture_pad = _capture_transport = None
 
     try:
         with mido.open_input(port_name) as inport:
@@ -785,12 +803,18 @@ def _learn_scan_loop(port_name, gen):
                             _ingest_mapping("CC", msg.channel, msg.control, msg.value)
                         if _capture_fx:
                             _capture_fx("CC", msg.channel, msg.control)
+                        if _capture_transport:
+                            _capture_transport("CC", msg.channel, msg.control, msg.value)
 
                     elif msg.type == "note_on" and msg.velocity > 0:
                         if _ingest_mapping:
                             _ingest_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
                         if _capture_fx:
                             _capture_fx("NOTE_ON", msg.channel, msg.note)
+                        if _capture_pad:
+                            _capture_pad("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        if _capture_transport:
+                            _capture_transport("NOTE_ON", msg.channel, msg.note, msg.velocity)
                         # Fire FX rack note triggers (TOGGLE / MOMENTARY / FLASH)
                         try:
                             from . import ops_fx as _ops_fx
@@ -977,6 +1001,11 @@ class SCORESYNC_OT_connect(bpy.types.Operator):
                 DEV_MAP.last_val.clear()
                 DEV_MAP.prev_raw.clear()
                 DEV_MAP.toggle_state.clear()
+                try:
+                    from .ops_transport import DEV_TP
+                    DEV_TP.prev_raw.clear()
+                except Exception:
+                    pass
             except Exception:
                 pass
             global _LISTENER_GEN

@@ -59,6 +59,12 @@ from .ops_transport import (
     SCORESYNC_OT_stop,
     SCORESYNC_OT_locate_to_timeline,
     SCORESYNC_OT_open_area,
+    TransportMidiBind,
+    SCORESYNC_OT_transport_learn_start,
+    SCORESYNC_OT_transport_learn_cancel,
+    SCORESYNC_OT_transport_clear_binding,
+    transport_midi_classes,
+    _TRANSPORT_TARGETS,
 )
 
 from .ops_markers import (
@@ -107,6 +113,9 @@ from .ops_sampler import (                         # v2.0 Visual Sampler
     SCORESYNC_OT_sampler_import_bank,
     SCORESYNC_OT_sampler_reload_cache,
     SCORESYNC_OT_sampler_reset_pad,
+    SCORESYNC_OT_sampler_pad_learn_start,
+    SCORESYNC_OT_sampler_pad_learn_cancel,
+    SCORESYNC_OT_sampler_pad_clear_binding,
     ingest_note_for_sampler,
     ingest_pc_for_sampler,
     sampler_classes,
@@ -318,6 +327,20 @@ def register_props():
         name="FX Learn Status", default=""
     )
 
+    # Sampler pad learn status (v2.1)
+    scene.scoresync_sampler_learn_status = bpy.props.StringProperty(
+        name="Pad Learn Status", default=""
+    )
+
+    # Transport MIDI bindings (v2.1) — one PointerProperty per action
+    scene.scoresync_tp_play        = bpy.props.PointerProperty(type=TransportMidiBind)
+    scene.scoresync_tp_stop        = bpy.props.PointerProperty(type=TransportMidiBind)
+    scene.scoresync_tp_next_marker = bpy.props.PointerProperty(type=TransportMidiBind)
+    scene.scoresync_tp_prev_marker = bpy.props.PointerProperty(type=TransportMidiBind)
+    scene.scoresync_transport_learn_status = bpy.props.StringProperty(
+        name="Transport Learn Status", default=""
+    )
+
 
 
 def unregister_props():
@@ -360,6 +383,12 @@ def unregister_props():
         "scoresync_fx_slots",
         "scoresync_fx_index",
         "scoresync_fx_learn_status",
+        "scoresync_sampler_learn_status",
+        "scoresync_tp_play",
+        "scoresync_tp_stop",
+        "scoresync_tp_next_marker",
+        "scoresync_tp_prev_marker",
+        "scoresync_transport_learn_status",
     ):
         if hasattr(scene, attr):
             delattr(scene, attr)
@@ -422,11 +451,12 @@ def _load_post_handler(filepath):
 # before the scene CollectionProperty declarations in register_props(), so they
 # are registered as a flat tuple first via the *_classes lists, then the rest.
 classes = (
-    # v2.0 PropertyGroups (must be first — used in CollectionProperty)
+    # v2.0/2.1 PropertyGroups (must be first — used in CollectionProperty/PointerProperty)
     ScoreSyncMapping,
     SamplerPad,
     SamplerBank,
     ScoreSyncFXSlot,
+    TransportMidiBind,        # v2.1 transport MIDI bindings
 
     ScoreSyncPreferences,
 
@@ -486,9 +516,18 @@ classes = (
     SCORESYNC_OT_sampler_import_bank,
     SCORESYNC_OT_sampler_reload_cache,
     SCORESYNC_OT_sampler_reset_pad,
+    # v2.1 — Pad MIDI learn
+    SCORESYNC_OT_sampler_pad_learn_start,
+    SCORESYNC_OT_sampler_pad_learn_cancel,
+    SCORESYNC_OT_sampler_pad_clear_binding,
 
     # v2.0 — Right-click context learn
     *context_classes,
+
+    # v2.1 — Transport MIDI bindings
+    SCORESYNC_OT_transport_learn_start,
+    SCORESYNC_OT_transport_learn_cancel,
+    SCORESYNC_OT_transport_clear_binding,
 
     # v2.0 — FX Rack
     SCORESYNC_OT_fx_setup_material,

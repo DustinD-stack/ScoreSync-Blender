@@ -80,6 +80,13 @@ MAPPING_PRESETS = {
         {"label": "Frame",         "id_type": "SCENE",  "id_name": "__SCENE__",  "data_path": "frame_current",    "value_min":   0.0, "value_max": 250.0},
         {"label": "Timeline Start","id_type": "SCENE",  "id_name": "__SCENE__",  "data_path": "frame_start",      "value_min":   0.0, "value_max": 250.0},
     ],
+    "TRANSPORT": [
+        # Knob/encoder → timeline position.  Use encoder_mode=RELATIVE for rotary encoders.
+        {"label": "Scrub Frame",   "id_type": "SCENE",  "id_name": "__SCENE__",  "data_path": "frame_current",    "value_min":   0.0, "value_max": 500.0},
+        {"label": "Manual BPM",    "id_type": "SCENE",  "id_name": "__SCENE__",  "data_path": "scoresync_manual_bpm", "value_min": 60.0, "value_max": 200.0},
+        {"label": "Frame Start",   "id_type": "SCENE",  "id_name": "__SCENE__",  "data_path": "frame_start",      "value_min":   0.0, "value_max": 250.0},
+        {"label": "Frame End",     "id_type": "SCENE",  "id_name": "__SCENE__",  "data_path": "frame_end",        "value_min":   1.0, "value_max": 500.0},
+    ],
 }
 
 
@@ -231,8 +238,10 @@ def apply_mappings_tick(scene) -> bool:
 
         if m.midi_type == "NOTE_ON":
             dirty |= _apply_note_on_mapping(m, block, key, raw, prev)
+        elif getattr(m, "encoder_mode", "ABSOLUTE") == "RELATIVE":
+            dirty |= _apply_encoder(m, block, key, raw)
         else:
-            # CC → continuous linear map
+            # CC absolute → continuous linear map
             if _set_property(block, m.data_path, _midi_to_value(raw, m.value_min, m.value_max)):
                 dirty = True
 
@@ -287,6 +296,50 @@ def _apply_note_on_mapping(m, block, key, raw: int, prev) -> bool:
     return False
 
 
+def _apply_encoder(m, block, key: tuple, raw: int) -> bool:
+    """
+    Relative encoder handling.
+    Most encoders use offset-binary: center=64, >64=CW (+), <64=CCW (-).
+    Each message is a step, not an absolute position.
+
+    After applying, reset last_val to 64 (center) so the same delta
+    doesn't re-fire on the next timer tick.
+    """
+    if raw == 64:
+        return False  # no movement
+
+    # Dead-zone ±1 around center to ignore jitter
+    if 63 <= raw <= 65:
+        return False
+
+    range_size = m.value_max - m.value_min
+    if range_size == 0:
+        return False
+
+    step_pct = max(0.001, getattr(m, "encoder_step", 1.0) / 100.0)
+
+    # Offset from center: +1…+63 (CW), -1…-64 (CCW)
+    offset = raw - 64
+    # Scale: full-speed turn (offset ±63) = 1× step, slow nudge = fraction
+    delta = (offset / 63.0) * step_pct * range_size
+
+    parent, attr = _resolve_prop_parent(block, m.data_path)
+    if parent is None:
+        return False
+
+    try:
+        current = float(getattr(parent, attr, m.value_min))
+        new_val = max(m.value_min, min(m.value_max, current + delta))
+        if _set_property(block, m.data_path, new_val):
+            # Reset to center so same raw doesn't re-fire next tick
+            DEV_MAP.last_val[key] = 64
+            DEV_MAP.prev_raw[key] = 64
+            return True
+    except Exception as e:
+        print(f"[ScoreSync] encoder failed ({m.data_path}): {e}")
+    return False
+
+
 def ingest_midi_for_mapping(midi_type: str, channel: int, num: int, val: int):
     """
     Called from listener thread. Stores latest raw value; captures learn event.
@@ -336,10 +389,25 @@ class ScoreSyncMapping(bpy.types.PropertyGroup):
         ],
         default="TOGGLE",
     )
+    encoder_mode: bpy.props.EnumProperty(
+        name="Encoder Mode",
+        description="CC input interpretation — use Relative for rotary encoders",
+        items=[
+            ("ABSOLUTE", "Knob (Absolute)",  "0–127 maps linearly to min–max"),
+            ("RELATIVE", "Encoder (Relative)", "Each tick nudges the value; 65–127 = CW, 0–63 = CCW"),
+        ],
+        default="ABSOLUTE",
+    )
     channel  : bpy.props.IntProperty(name="Channel",  default=0, min=0,   max=15)
     midi_num : bpy.props.IntProperty(name="CC / Note", default=0, min=0,  max=127)
     value_min: bpy.props.FloatProperty(name="Min", default=0.0)
     value_max: bpy.props.FloatProperty(name="Max", default=1.0)
+    encoder_step: bpy.props.FloatProperty(
+        name="Step %",
+        description="How much of the value range each encoder tick moves (percent)",
+        default=1.0, min=0.1, max=20.0,
+        subtype='PERCENTAGE',
+    )
 
 
 # ── Operators ─────────────────────────────────────────────────────────────────
@@ -447,6 +515,7 @@ class SCORESYNC_OT_mapping_apply_preset(bpy.types.Operator):
             ("CAMERA",        "Camera",        "Camera transform + FOV"),
             ("ACTIVE_OBJECT", "Active Object", "Active object transform"),
             ("SCENE",         "Scene",         "Frame / timeline"),
+            ("TRANSPORT",     "Transport",     "Scrub frame, BPM, timeline start/end via knob/encoder"),
         ],
         default="CAMERA",
     )

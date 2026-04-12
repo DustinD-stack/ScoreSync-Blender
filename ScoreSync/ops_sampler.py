@@ -53,6 +53,66 @@ _DEFAULT_PADS = 16   # 4×4 template
 _DEFAULT_BANKS = 4
 
 
+# ── Pad MIDI learn state ──────────────────────────────────────────────────────
+class _PadLearnState:
+    learning       = False
+    bank_idx       = -1
+    pad_idx        = -1
+    capture_dirty  = False
+    pending_type   = ""
+    pending_ch     = 0
+    pending_num    = 0
+
+DEV_PAD_LEARN = _PadLearnState()
+
+
+def sampler_pad_learn_capture(midi_type: str, channel: int, num: int, val: int):
+    """
+    Called from the MIDI scan thread when pad learn is active.
+    Only captures NOTE_ON with velocity > 0 (ignores CCs and note-offs).
+    Thread-safe: only writes simple scalar attrs (CPython atomic).
+    """
+    if not DEV_PAD_LEARN.learning:
+        return
+    if midi_type != "NOTE_ON" or val == 0:
+        return
+    DEV_PAD_LEARN.pending_type  = midi_type
+    DEV_PAD_LEARN.pending_ch    = channel
+    DEV_PAD_LEARN.pending_num   = num
+    DEV_PAD_LEARN.capture_dirty = True
+    DEV_PAD_LEARN.learning      = False   # capture one, then stop
+
+
+def apply_sampler_learn_tick(scene) -> bool:
+    """
+    Process a pending pad-learn capture on the main thread.
+    Returns True if a pad binding was updated (caller can tag_redraw).
+    """
+    if not DEV_PAD_LEARN.capture_dirty:
+        return False
+    DEV_PAD_LEARN.capture_dirty = False
+
+    banks = getattr(scene, "scoresync_banks", None)
+    if not banks:
+        return False
+    b, p = DEV_PAD_LEARN.bank_idx, DEV_PAD_LEARN.pad_idx
+    if not (0 <= b < len(banks)):
+        return False
+    bank = banks[b]
+    if not (0 <= p < len(bank.pads)):
+        return False
+
+    pad         = bank.pads[p]
+    pad.note    = DEV_PAD_LEARN.pending_num
+    pad.channel = DEV_PAD_LEARN.pending_ch
+    scene.scoresync_sampler_learn_status = (
+        f"Pad {p+1} → Note {DEV_PAD_LEARN.pending_num}  ch{DEV_PAD_LEARN.pending_ch+1}"
+    )
+    print(f"[ScoreSync] Pad {b+1}/{p+1} learned: "
+          f"Note {DEV_PAD_LEARN.pending_num} ch{DEV_PAD_LEARN.pending_ch+1}")
+    return True
+
+
 # ── Cache helpers ─────────────────────────────────────────────────────────────
 def _default_cache_path() -> str:
     blend = bpy.data.filepath
@@ -611,6 +671,68 @@ class SCORESYNC_OT_sampler_reset_pad(bpy.types.Operator):
         return {'FINISHED'}
 
 
+# ── Pad learn operators ───────────────────────────────────────────────────────
+
+class SCORESYNC_OT_sampler_pad_learn_start(bpy.types.Operator):
+    """Press any pad/key on your controller to bind its note to this pad"""
+    bl_idname   = "scoresync.sampler_pad_learn_start"
+    bl_label    = "Learn Pad Note"
+    bl_description = "Touch a pad or key on your controller to capture its note"
+
+    bank_index: bpy.props.IntProperty(default=0)
+    pad_index : bpy.props.IntProperty(default=0)
+
+    def execute(self, context):
+        DEV_PAD_LEARN.learning      = True
+        DEV_PAD_LEARN.bank_idx      = self.bank_index
+        DEV_PAD_LEARN.pad_idx       = self.pad_index
+        DEV_PAD_LEARN.capture_dirty = False
+        context.scene.scoresync_sampler_learn_status = (
+            f"Listening for pad {self.pad_index+1}… press any key/pad on your controller"
+        )
+        self.report({'INFO'}, "Pad learn ON — touch a pad, key, or button")
+        try:
+            from .ops_connection import start_learn_scan
+            start_learn_scan()
+        except Exception:
+            pass
+        return {'FINISHED'}
+
+
+class SCORESYNC_OT_sampler_pad_learn_cancel(bpy.types.Operator):
+    bl_idname = "scoresync.sampler_pad_learn_cancel"
+    bl_label  = "Cancel Pad Learn"
+
+    def execute(self, context):
+        DEV_PAD_LEARN.learning = False
+        context.scene.scoresync_sampler_learn_status = ""
+        return {'FINISHED'}
+
+
+class SCORESYNC_OT_sampler_pad_clear_binding(bpy.types.Operator):
+    """Clear the MIDI note binding from this pad"""
+    bl_idname  = "scoresync.sampler_pad_clear_binding"
+    bl_label   = "Clear Pad Binding"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    bank_index: bpy.props.IntProperty(default=0)
+    pad_index : bpy.props.IntProperty(default=0)
+
+    def execute(self, context):
+        scene = context.scene
+        banks = getattr(scene, "scoresync_banks", None)
+        if not banks or not (0 <= self.bank_index < len(banks)):
+            return {'CANCELLED'}
+        bank = banks[self.bank_index]
+        if not (0 <= self.pad_index < len(bank.pads)):
+            return {'CANCELLED'}
+        pad         = bank.pads[self.pad_index]
+        pad.note    = 0
+        pad.channel = 0
+        self.report({'INFO'}, f"Pad {self.pad_index+1} note binding cleared")
+        return {'FINISHED'}
+
+
 # ── Registration list ─────────────────────────────────────────────────────────
 sampler_classes = (
     SamplerPad,
@@ -626,4 +748,7 @@ sampler_classes = (
     SCORESYNC_OT_sampler_import_bank,
     SCORESYNC_OT_sampler_reload_cache,
     SCORESYNC_OT_sampler_reset_pad,
+    SCORESYNC_OT_sampler_pad_learn_start,
+    SCORESYNC_OT_sampler_pad_learn_cancel,
+    SCORESYNC_OT_sampler_pad_clear_binding,
 )

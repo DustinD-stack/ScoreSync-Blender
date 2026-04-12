@@ -184,3 +184,206 @@ class SCORESYNC_OT_locate_to_timeline(bpy.types.Operator):
             return {'CANCELLED'}
 
         return {'FINISHED'}
+
+
+# ── Transport MIDI bindings ────────────────────────────────────────────────────
+# Bind hardware buttons/knobs directly to transport actions and timeline control.
+# Separate from the MIDI Mapping layer — these fire operators, not properties.
+
+_TRANSPORT_TARGETS = [
+    ("PLAY",        "Play",        "Start playback and send transport to DAW"),
+    ("STOP",        "Stop",        "Stop playback and send transport to DAW"),
+    ("NEXT_MARKER", "Next Marker", "Jump to next timeline marker"),
+    ("PREV_MARKER", "Prev Marker", "Jump to previous timeline marker"),
+]
+
+_TRANSPORT_TARGET_IDS = [t[0] for t in _TRANSPORT_TARGETS]
+
+
+class _TransportLearnState:
+    learning       = False
+    target         = ""    # e.g. "PLAY"
+    capture_dirty  = False
+    pending_type   = ""
+    pending_ch     = 0
+    pending_num    = 0
+    prev_raw       = {}    # (type, ch, num) → last raw seen, for edge detection
+
+DEV_TP = _TransportLearnState()
+
+
+class TransportMidiBind(bpy.types.PropertyGroup):
+    """One MIDI binding for a single transport action (stored as PointerProperty on scene)."""
+    midi_type: bpy.props.EnumProperty(
+        name="MIDI Type",
+        items=[("CC", "CC", "Control Change threshold"), ("NOTE_ON", "Note On", "")],
+        default="NOTE_ON",
+    )
+    channel : bpy.props.IntProperty(name="Channel", default=0, min=0, max=15)
+    midi_num: bpy.props.IntProperty(name="CC / Note", default=0, min=0, max=127)
+    enabled : bpy.props.BoolProperty(name="Enabled", default=True)
+    bound   : bpy.props.BoolProperty(name="Bound", default=False)
+
+
+def transport_learn_capture(midi_type: str, channel: int, num: int, val: int):
+    """
+    Called from the MIDI scan thread when transport learn is active.
+    Captures the first NOTE_ON or CC that arrives.
+    """
+    if not DEV_TP.learning:
+        return
+    if midi_type == "NOTE_ON" and val == 0:
+        return  # ignore note-off
+    DEV_TP.pending_type  = midi_type
+    DEV_TP.pending_ch    = channel
+    DEV_TP.pending_num   = num
+    DEV_TP.capture_dirty = True
+    DEV_TP.learning      = False
+
+
+def _fire_transport_target(scene, target: str):
+    """Execute the Blender/ScoreSync action for a transport target."""
+    try:
+        if target == "PLAY":
+            bpy.ops.scoresync.tx_play()
+        elif target == "STOP":
+            bpy.ops.scoresync.tx_stop()
+        elif target == "NEXT_MARKER":
+            bpy.ops.screen.marker_jump(next=True)
+        elif target == "PREV_MARKER":
+            bpy.ops.screen.marker_jump(next=False)
+    except Exception as e:
+        print(f"[ScoreSync] transport fire failed ({target}): {e}")
+
+
+def apply_transport_midi_tick(scene) -> bool:
+    """
+    Apply MIDI-driven transport actions. Call from main timer.
+    Returns True when an action fired (so caller can tag_redraw).
+    """
+    dirty = False
+
+    # Process pending learn capture
+    if DEV_TP.capture_dirty and DEV_TP.pending_type and DEV_TP.target:
+        DEV_TP.capture_dirty = False
+        bind = _get_bind(scene, DEV_TP.target)
+        if bind:
+            bind.midi_type = DEV_TP.pending_type
+            bind.channel   = DEV_TP.pending_ch
+            bind.midi_num  = DEV_TP.pending_num
+            bind.bound     = True
+            bind.enabled   = True
+            scene.scoresync_transport_learn_status = (
+                f"{DEV_TP.target}: {DEV_TP.pending_type} ch{DEV_TP.pending_ch+1} "
+                f"#{DEV_TP.pending_num}"
+            )
+            print(f"[ScoreSync] Transport learned: {DEV_TP.target} → "
+                  f"{DEV_TP.pending_type} ch{DEV_TP.pending_ch+1} #{DEV_TP.pending_num}")
+        DEV_TP.target = ""
+        dirty = True
+
+    try:
+        from .ops_mapping import DEV_MAP
+    except Exception:
+        return dirty
+
+    for target_id in _TRANSPORT_TARGET_IDS:
+        bind = _get_bind(scene, target_id)
+        if bind is None or not bind.enabled or not bind.bound:
+            continue
+
+        key = (bind.midi_type, bind.channel, bind.midi_num)
+        raw = DEV_MAP.last_val.get(key)
+        if raw is None:
+            continue
+
+        prev = DEV_TP.prev_raw.get(key)
+        if raw == prev:
+            continue
+        DEV_TP.prev_raw[key] = raw
+
+        # NOTE_ON: fire on rising edge (0 → nonzero)
+        # CC: fire when crossing threshold 64 (low→high)
+        if bind.midi_type == "NOTE_ON":
+            if raw > 0 and (prev is None or prev == 0):
+                _fire_transport_target(scene, target_id)
+                dirty = True
+        else:  # CC
+            if raw > 64 and (prev is None or prev <= 64):
+                _fire_transport_target(scene, target_id)
+                dirty = True
+
+    return dirty
+
+
+def _get_bind(scene, target_id: str):
+    """Return the TransportMidiBind PointerProperty for a target, or None."""
+    attr = f"scoresync_tp_{target_id.lower()}"
+    return getattr(scene, attr, None)
+
+
+# ── Transport learn / clear operators ────────────────────────────────────────
+
+class SCORESYNC_OT_transport_learn_start(bpy.types.Operator):
+    """Touch any control on your controller to bind it to this transport action"""
+    bl_idname   = "scoresync.transport_learn_start"
+    bl_label    = "Learn Transport"
+    bl_description = "Touch any pad, button, or knob to bind it to this action"
+
+    target: bpy.props.EnumProperty(name="Target", items=_TRANSPORT_TARGETS)
+
+    def execute(self, context):
+        DEV_TP.learning      = True
+        DEV_TP.target        = self.target
+        DEV_TP.capture_dirty = False
+        context.scene.scoresync_transport_learn_status = (
+            f"Listening for {self.target}… touch any control"
+        )
+        self.report({'INFO'}, f"Transport learn: {self.target} — touch a control")
+        try:
+            from .ops_connection import start_learn_scan
+            start_learn_scan()
+        except Exception:
+            pass
+        return {'FINISHED'}
+
+
+class SCORESYNC_OT_transport_learn_cancel(bpy.types.Operator):
+    bl_idname = "scoresync.transport_learn_cancel"
+    bl_label  = "Cancel Transport Learn"
+
+    def execute(self, context):
+        DEV_TP.learning = False
+        DEV_TP.target   = ""
+        context.scene.scoresync_transport_learn_status = ""
+        return {'FINISHED'}
+
+
+class SCORESYNC_OT_transport_clear_binding(bpy.types.Operator):
+    """Clear the MIDI binding from this transport action"""
+    bl_idname  = "scoresync.transport_clear_binding"
+    bl_label   = "Clear Transport Binding"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    target: bpy.props.EnumProperty(name="Target", items=_TRANSPORT_TARGETS)
+
+    def execute(self, context):
+        bind = _get_bind(context.scene, self.target)
+        if bind:
+            bind.bound   = False
+            bind.enabled = True
+            DEV_TP.prev_raw.pop(
+                (bind.midi_type, bind.channel, bind.midi_num), None
+            )
+        context.scene.scoresync_transport_learn_status = (
+            f"{self.target} binding cleared"
+        )
+        return {'FINISHED'}
+
+
+transport_midi_classes = (
+    TransportMidiBind,
+    SCORESYNC_OT_transport_learn_start,
+    SCORESYNC_OT_transport_learn_cancel,
+    SCORESYNC_OT_transport_clear_binding,
+)
