@@ -480,13 +480,31 @@ def _apply_incoming(scene, ts, msg):
 _REDRAW_AREA_TYPES = {'VIEW_3D', 'NODE_EDITOR', 'PROPERTIES', 'IMAGE_EDITOR', 'DOPESHEET_EDITOR'}
 
 def _tag_all_areas():
-    """Force a repaint on areas that display MIDI-driven data.
-    Only called when apply ticks report a change — keeps idle cost zero."""
+    """
+    Force a repaint on all relevant areas and their regions.
+
+    Why tag regions too:
+    - area.tag_redraw() only redraws the main WINDOW region of that area.
+    - ScoreSync N-panel lives in the UI region (side panel) of VIEW_3D —
+      it won't repaint from area.tag_redraw() alone.
+    - The ScoreSync popup editor is a separate WINDOW-type area and needs
+      its own screen areas iterated.
+
+    Only called when an apply tick reports a change, so idle cost is zero.
+    """
     try:
-        for window in bpy.context.window_manager.windows:
+        wm = bpy.context.window_manager
+        for window in wm.windows:
             for area in window.screen.areas:
                 if area.type in _REDRAW_AREA_TYPES:
                     area.tag_redraw()
+                    for region in area.regions:
+                        region.tag_redraw()
+                # Popup / floating dialogs appear as WINDOW-type areas —
+                # tag everything inside them so the ScoreSync editor repaints.
+                elif area.type == 'EMPTY':
+                    for region in area.regions:
+                        region.tag_redraw()
     except Exception:
         pass
 
