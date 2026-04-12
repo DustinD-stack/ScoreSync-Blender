@@ -409,8 +409,9 @@ class ScoreSyncMapping(bpy.types.PropertyGroup):
     value_max: bpy.props.FloatProperty(name="Max", default=1.0)
     encoder_step: bpy.props.FloatProperty(
         name="Step %",
-        description="How much of the value range each encoder tick moves (percent)",
-        default=1.0, min=0.1, max=20.0,
+        description="How much of the value range each encoder tick moves (percent). "
+                    "Higher = faster scrub. Start at 8 for timeline scrub.",
+        default=1.0, min=0.1, max=100.0,
         subtype='PERCENTAGE',
     )
 

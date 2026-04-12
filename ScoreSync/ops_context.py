@@ -364,7 +364,7 @@ class SCORESYNC_OT_context_learn_scrub(bpy.types.Operator):
         m.value_max   = float(self.frame_end)
         m.midi_type   = "CC"
         m.encoder_mode = "RELATIVE"
-        m.encoder_step = 1.0
+        m.encoder_step = 8.0   # ~1 frame per slow detent on a 500-frame range
         m.enabled     = True
 
         idx = len(mappings) - 1
@@ -393,26 +393,11 @@ def _draw_timeline_menu(self, context):
     """Injected into the Timeline, Dopesheet, and Sequencer context menus."""
     layout = self.layout
     layout.separator()
-    layout.label(text="ScoreSync", icon='REC')
     layout.operator(
         "scoresync.context_learn_scrub",
         icon='REC',
-        text="Learn MIDI Scrub (Knob / Encoder)",
+        text="ScoreSync: Learn MIDI Scrub (Knob / Encoder)",
     )
-    # Quick transport binds for convenience
-    layout.separator()
-    for target_id, label in (
-        ("PLAY",        "Play"),
-        ("STOP",        "Stop"),
-        ("NEXT_MARKER", "Next Marker"),
-        ("PREV_MARKER", "Prev Marker"),
-    ):
-        item = layout.operator(
-            "scoresync.context_learn_transport",
-            icon='BLANK1',
-            text=f"Learn MIDI → {label}",
-        )
-        item.target = target_id
 
 
 # ── Registration ──────────────────────────────────────────────────────────────
