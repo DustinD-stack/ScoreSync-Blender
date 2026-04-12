@@ -476,6 +476,21 @@ def _apply_incoming(scene, ts, msg):
 
     return True
 
+# ---- Viewport redraw --------------------------------------------------------
+_REDRAW_AREA_TYPES = {'VIEW_3D', 'NODE_EDITOR', 'PROPERTIES', 'IMAGE_EDITOR', 'DOPESHEET_EDITOR'}
+
+def _tag_all_areas():
+    """Force a repaint on areas that display MIDI-driven data.
+    Only called when apply ticks report a change — keeps idle cost zero."""
+    try:
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type in _REDRAW_AREA_TYPES:
+                    area.tag_redraw()
+    except Exception:
+        pass
+
+
 # ---- Timer ------------------------------------------------------------------
 def scoresync_timer():
     try:
@@ -530,19 +545,24 @@ def scoresync_timer():
         pass  # never let the timer die — Blender deregisters on any uncaught exception
 
 
-    # ---- MIDI Mapping apply tick (v2.0) ----
+    # ---- MIDI Mapping + FX apply ticks (v2.0) ----
+    _viewport_dirty = False
     try:
         from . import ops_mapping as _ops_mapping
-        _ops_mapping.apply_mappings_tick(scene)
+        if _ops_mapping.apply_mappings_tick(scene):
+            _viewport_dirty = True
     except Exception:
         pass
 
-    # ---- FX Rack apply tick (v2.0) ----
     try:
         from . import ops_fx as _ops_fx
-        _ops_fx.apply_fx_tick(scene)
+        if _ops_fx.apply_fx_tick(scene):
+            _viewport_dirty = True
     except Exception:
         pass
+
+    if _viewport_dirty:
+        _tag_all_areas()
 
     # Update master status string for the UI
     try:

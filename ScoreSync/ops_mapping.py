@@ -179,8 +179,12 @@ def _toggle_if_bool(block, data_path: str) -> bool:
 
 
 # ── Apply tick (called from scoresync_timer) ──────────────────────────────────
-def apply_mappings_tick(scene):
-    """Apply any pending MIDI values to mapped properties. Call from main timer."""
+def apply_mappings_tick(scene) -> bool:
+    """
+    Apply any pending MIDI values to mapped properties. Call from main timer.
+    Returns True if any property was written (caller should tag_redraw).
+    """
+    dirty = False
 
     # ── Auto-assign after learn capture ──────────────────────────────────────
     if DEV_MAP.capture_dirty and DEV_MAP.pending_type:
@@ -204,10 +208,11 @@ def apply_mappings_tick(scene):
                 f"#{DEV_MAP.pending_num}  — select a mapping then click ← Assign"
             )
         DEV_MAP.target_idx = -1
+        dirty = True
 
     mappings = getattr(scene, "scoresync_mappings", None)
     if mappings is None:
-        return
+        return dirty
     for m in mappings:
         if not m.enabled:
             continue
@@ -239,17 +244,19 @@ def apply_mappings_tick(scene):
                     parent = block.path_resolve(parts[0]) if len(parts) == 2 else block
                     attr   = parts[1] if len(parts) == 2 else parts[0]
                     rna_prop = parent.bl_rna.properties.get(attr)
-                    if rna_prop and rna_prop.type == 'BOOLEAN':
-                        pass  # booleans are toggled on press, don't reset on release
-                    else:
+                    if rna_prop and rna_prop.type != 'BOOLEAN':
                         _set_property(block, m.data_path, m.value_min)
                 except Exception:
                     pass
+            dirty = True
             continue
 
         # CC → continuous map
         value = _midi_to_value(raw, m.value_min, m.value_max)
-        _set_property(block, m.data_path, value)
+        if _set_property(block, m.data_path, value):
+            dirty = True
+
+    return dirty
 
 
 def ingest_midi_for_mapping(midi_type: str, channel: int, num: int, val: int):

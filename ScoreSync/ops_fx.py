@@ -192,8 +192,13 @@ def _apply_mat_fx(scene, slot, value: float):
 
 # ── Main apply tick (called from scoresync_timer) ─────────────────────────────
 
-def apply_fx_tick(scene):
-    """Apply MIDI-driven values to all enabled FX slots. Call from main timer."""
+def apply_fx_tick(scene) -> bool:
+    """
+    Apply MIDI-driven values to all enabled FX slots. Call from main timer.
+    Returns True if any value was written (caller should tag_redraw).
+    """
+    dirty = False
+
     # Apply any pending learn result (was captured in listener thread)
     if DEV_FX.pending_learn is not None:
         p = DEV_FX.pending_learn
@@ -207,15 +212,16 @@ def apply_fx_tick(scene):
             scene.scoresync_fx_learn_status = (
                 f"Slot {p['slot']+1}: {p['type']} ch{p['ch']} #{p['num']}"
             )
+        dirty = True
 
     try:
         from .ops_mapping import DEV_MAP
     except Exception:
-        return
+        return dirty
 
     slots = getattr(scene, "scoresync_fx_slots", None)
     if not slots:
-        return
+        return dirty
 
     now = time.time()
 
@@ -256,11 +262,14 @@ def apply_fx_tick(scene):
             continue
 
         slot.current_value = value
+        dirty = True
 
         if slot.fx_type in _MAT_FX_TYPES:
             _apply_mat_fx(scene, slot, value)
         else:
             _apply_vse_fx(scene, slot, value)
+
+    return dirty
 
 
 # ── Note event handlers (called from main-thread _apply_incoming) ─────────────
