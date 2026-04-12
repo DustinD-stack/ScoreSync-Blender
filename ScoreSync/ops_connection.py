@@ -958,6 +958,7 @@ class SCORESYNC_OT_connect(bpy.types.Operator):
                 from .ops_mapping import DEV_MAP
                 DEV_MAP.last_val.clear()
                 DEV_MAP.prev_raw.clear()
+                DEV_MAP.toggle_state.clear()
             except Exception:
                 pass
             global _LISTENER_GEN
