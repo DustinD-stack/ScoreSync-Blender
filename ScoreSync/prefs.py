@@ -13,8 +13,8 @@ ADDON_NAME = __name__.split(".")[0]   # "ScoreSync"
 # Each entry is a dict of {scene_prop_name: value} to apply.
 BUILTIN_PRESETS = {
     "FL_FOLLOW": {
-        "label": "FL Follow",
-        "description": "FL Studio drives everything. Blender follows clock + transport only.",
+        "label": "DAW Follow",
+        "description": "DAW drives everything. Blender follows clock + transport only.",
         "props": {
             "scoresync_master_mode":       "FL",
             "scoresync_duplex_mode":       "OFF",
@@ -25,7 +25,7 @@ BUILTIN_PRESETS = {
     },
     "BLENDER_ASSIST": {
         "label": "Blender Assist",
-        "description": "Auto mode: FL leads when playing; scrubbing Blender nudges FL when stopped.",
+        "description": "Auto mode: DAW leads when playing; scrubbing Blender nudges the DAW when stopped.",
         "props": {
             "scoresync_master_mode":       "AUTO",
             "scoresync_duplex_mode":       "ASSIST",

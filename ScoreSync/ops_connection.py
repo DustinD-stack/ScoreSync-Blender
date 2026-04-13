@@ -288,8 +288,8 @@ def _apply_incoming(scene, ts, msg):
     if t == "health_ok":
         scene.scoresync_script_ok = True
         scene.scoresync_script_ok_ts = time.time()
-        scene.scoresync_led_text = "🟢 FL Script OK"
-        scene.scoresync_status = "FL Script: OK"
+        scene.scoresync_led_text = "🟢 DAW Script OK"
+        scene.scoresync_status = "DAW Script: OK"
         _log_event("health_ok", "FL script ACK received")
         return True
 
@@ -615,16 +615,16 @@ def scoresync_timer():
     try:
         master_mode = getattr(scene, "scoresync_master_mode", "AUTO")
         if master_mode == "FL":
-            scene.scoresync_master_status = "FL (locked)"
+            scene.scoresync_master_status = "DAW (locked)"
         elif master_mode == "BLENDER":
             scene.scoresync_master_status = "Blender (locked)"
         elif _blender_is_master():
             remaining = max(0.0, DEV.master_until_ts - time.time())
             scene.scoresync_master_status = f"Blender ({remaining:.1f}s)"
         elif DEV.fl_is_playing:
-            scene.scoresync_master_status = "FL (playing)"
+            scene.scoresync_master_status = "DAW (playing)"
         else:
-            scene.scoresync_master_status = "FL (idle)"
+            scene.scoresync_master_status = "DAW (idle)"
     except Exception:
         pass
 
@@ -632,7 +632,7 @@ def scoresync_timer():
     # keep FL Script OK visible for 10s after last ACK
     try:
         if scene.scoresync_script_ok and (time.time() - scene.scoresync_script_ok_ts) < 10.0:
-            scene.scoresync_led_text = "🟢 FL Script OK"
+            scene.scoresync_led_text = "🟢 DAW Script OK"
             return 0.10
     except Exception:
         pass

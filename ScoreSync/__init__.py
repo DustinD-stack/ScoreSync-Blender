@@ -282,7 +282,7 @@ def register_props():
         name="Master Mode",
         items=[
             ("AUTO",    "Auto",    "FL leads when playing; Blender leads when FL stopped and user scrubs"),
-            ("FL",      "FL",      "FL Studio is always master — Blender only follows"),
+            ("FL",      "DAW",     "DAW is always master — Blender only follows"),
             ("BLENDER", "Blender", "Blender is always master — pushes transport to FL"),
         ],
         default="AUTO",
@@ -302,7 +302,7 @@ def register_props():
     scene.scoresync_hardware_mode = bpy.props.BoolProperty(
         name="Hardware Mode",
         default=False,
-        description="Hide FL Studio-specific UI and optimise defaults for standalone hardware (MPC, Elektron, Roland MC…)",
+        description="Hide DAW-specific UI and optimise defaults for standalone hardware (MPC, Elektron, Roland MC…)",
     )
 
     # MIDI Mapping Layer (v2.0)

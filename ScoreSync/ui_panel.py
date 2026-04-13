@@ -384,7 +384,7 @@ class SCORESYNC_PT_main(bpy.types.Panel):
         row = layout.row(align=True)
         if hw:
             row.operator("scoresync.fl_mode_apply",
-                         icon='SEQUENCE', text="← Switch to FL Mode")
+                         icon='SEQUENCE', text="← DAW Mode")
         else:
             row.operator("scoresync.hardware_mode_apply",
                          icon='PACKAGE',  text="Hardware Mode →")
@@ -468,7 +468,7 @@ class SCORESYNC_PT_connection(bpy.types.Panel):
             ok = (scene.scoresync_script_ok
                   and (time.time() - scene.scoresync_script_ok_ts) < 10.0)
             layout.label(
-                text="FL Script: " + ("OK ✓" if ok else "not detected"),
+                text="DAW Script: " + ("OK ✓" if ok else "not detected"),
                 icon='CHECKMARK' if ok else 'X',
             )
 
@@ -591,7 +591,7 @@ class SCORESYNC_PT_diagnostics(bpy.types.Panel):
         col = layout.column(align=True)
         col.label(text="Quick Presets", icon='PRESET')
         row = col.row(align=True)
-        for pid, lbl in (("FL_FOLLOW","FL Follow"),
+        for pid, lbl in (("FL_FOLLOW","DAW Follow"),
                          ("BLENDER_ASSIST","Assist"),
                          ("AUTO_MASTER","Auto")):
             op = row.operator("scoresync.apply_preset", text=lbl)
@@ -617,7 +617,7 @@ class SCORESYNC_PT_diagnostics(bpy.types.Panel):
         col.label(text="Tools", icon='CONSOLE')
         if not hw:
             col.operator("scoresync.export_fl_script", icon='EXPORT',
-                         text="Export FL Script")
+                         text="Export DAW Script")
         col.operator("scoresync.open_docs", icon='HELP', text="Open Docs")
 
 

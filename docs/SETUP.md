@@ -1,7 +1,6 @@
 # ScoreSync — Setup Guide
 
-ScoreSync syncs Blender's timeline to FL Studio (or any DAW) over MIDI using
-two virtual loopMIDI ports. Setup takes about 5 minutes.
+ScoreSync syncs Blender's timeline to any DAW or hardware sequencer over MIDI using two virtual loopMIDI ports. Setup takes about 5 minutes.
 
 ---
 
@@ -10,8 +9,8 @@ two virtual loopMIDI ports. Setup takes about 5 minutes.
 | Requirement | Where to get it |
 |---|---|
 | Blender 4.2 or later | blender.org |
-| FL Studio (any modern version) | image-line.com |
-| loopMIDI (Windows virtual MIDI ports) | tobias-erichsen.de/software/loopmidi.html |
+| A DAW or hardware sequencer that sends MIDI clock | FL Studio, Ableton, Bitwig, Reaper, Logic, MPC, Elektron, Roland MC-series… |
+| loopMIDI — Windows virtual MIDI ports | tobias-erichsen.de/software/loopmidi.html |
 | Internet connection (first run only) | for pip dependency install |
 
 ---
@@ -22,90 +21,109 @@ Open loopMIDI and create **exactly two ports** with these names (spelling matter
 
 | Port name | Direction |
 |---|---|
-| `ScoreSync_F2B` | FL Studio → Blender |
-| `ScoreSync_B2F` | Blender → FL Studio |
+| `ScoreSync_F2B` | DAW / Hardware → Blender |
+| `ScoreSync_B2F` | Blender → DAW / Hardware |
 
-Leave loopMIDI running in the background.
+Leave loopMIDI running in the background whenever you use ScoreSync.
 
 ---
 
 ## Step 2 — Install the Blender addon
 
 1. In Blender: **Edit → Preferences → Add-ons → Install**
-2. Select `ScoreSync_v0.8.0.zip`
+2. Select the ScoreSync zip file
 3. Enable the checkbox next to **ScoreSync**
-4. Open the **ScoreSync** tab in the View 3D sidebar (N key)
+4. Open the **ScoreSync** tab in the View 3D sidebar (press **N**)
 
 ---
 
 ## Step 3 — Install MIDI dependencies
 
-In the ScoreSync panel → **Setup Wizard → Step 1 → Install**
+In the ScoreSync panel → **Connection → Install deps**
 
-This installs `mido` and `python-rtmidi` into Blender's Python.  
-After it completes, click **Refresh** (Step 2).
-
----
-
-## Step 4 — Configure FL Studio MIDI
-
-Go to **FL Studio → Options → MIDI Settings**:
-
-| Direction | Port | Setting |
-|---|---|---|
-| **Output** | `ScoreSync_F2B` | Enable, tick **SYNC** (sends clock + transport to Blender) |
-| **Input** | `ScoreSync_B2F` | Enable, set Controller script to **ScoreSync** |
-| **Input** | `ScoreSync_F2B` | **Disable** (critical — if enabled, FL echoes its own transport causing a feedback loop) |
-
-> The ScoreSync controller script (`device_ScoreSync.py`) must be placed in:  
-> `Documents\Image-Line\FL Studio\Settings\Hardware\ScoreSync\`  
-> Use the **Export FL Script** button in the panel to copy it there.
+This installs `mido` and `python-rtmidi` into Blender's Python.
+After it completes, click **Refresh**. A one-time Blender restart may be needed.
 
 ---
 
-## Step 5 — Export and load the FL script
+## Step 4 — Route your DAW's MIDI clock to Blender
 
-1. In the ScoreSync panel → **Tools → Export FL Script**
-2. Navigate to `Documents\Image-Line\FL Studio\Settings\Hardware\ScoreSync\`  
-   (create the `ScoreSync` folder if it doesn't exist)
-3. Click **Accept**
-4. In FL Studio: **Options → MIDI Settings → Input → ScoreSync_B2F → Controller → ScoreSync**
-5. Restart FL Studio (or reload the script)
+ScoreSync receives sync on the **ScoreSync_F2B** loopMIDI port.
+Configure your DAW to send MIDI clock output to that port:
+
+**FL Studio**
+- Options → MIDI Settings → Output tab
+- Enable `ScoreSync_F2B`, tick **SYNC**
+- Do **not** enable `ScoreSync_F2B` as a MIDI Input — that creates a feedback loop
+
+**Ableton Live**
+- Preferences → MIDI → `ScoreSync_F2B` Output → set **Sync** to On
+
+**Bitwig Studio**
+- Settings → MIDI Controllers → add `ScoreSync_F2B` as output, enable Clock
+
+**Reaper**
+- Preferences → MIDI Devices → `ScoreSync_F2B` output → enable Send Clock
+
+**Hardware (MPC, Elektron, Roland MC…)**
+- Set the hardware's MIDI Out to `ScoreSync_F2B` via a USB-MIDI or DIN interface
+- Enable MIDI Clock Send on the hardware
+
+---
+
+## Step 5 — (FL Studio only) Export and load the DAW script
+
+If you're using FL Studio, ScoreSync includes a dedicated controller script that enables health checks and bidirectional transport.
+
+1. In the ScoreSync panel → **Tools → Export DAW Script**
+2. Place the exported file in: `Documents\Image-Line\FL Studio\Settings\Hardware\ScoreSync\`
+3. In FL Studio: Options → MIDI Settings → Input → `ScoreSync_B2F` → Controller → **ScoreSync**
+4. Restart FL Studio (or reload the script)
+
+For all other DAWs, skip this step — basic clock sync works without a script.
 
 ---
 
 ## Step 6 — Connect in Blender
 
-In the ScoreSync panel → **Setup Wizard**:
+In the ScoreSync panel → **Connection**:
 
-1. **MIDI In** → `ScoreSync_F2B 1`
-2. **MIDI Out** → `ScoreSync_B2F 1`
-3. Click **(Re)Connect**
-4. Click **Check FL Script** — should show ✅ FL Script OK within 2 seconds
+1. Click the refresh icon (↻) to scan for ports
+2. **MIDI In** → `ScoreSync_F2B 1`
+3. **MIDI Out** → `ScoreSync_B2F 1`
+4. Click **(Re)Connect**
+
+The LED in the header tells you what's happening:
+
+| LED | Meaning |
+|---|---|
+| 🟢 clock OK | MIDI clock arriving — full sync active |
+| 🟡 SPP only | Position data but no clock ticks |
+| 🔴 idle | Nothing received — check your DAW output routing |
 
 ---
 
-## Step 7 — Choose a preset
+## Step 7 — Choose a preset (optional)
 
 | Preset | Use when |
 |---|---|
-| **FL Follow** | FL drives everything; Blender is a passive display |
-| **Blender Assist** | You mostly work in FL but want to scrub Blender when FL is stopped |
-| **Auto Master** | Equal collaboration; whoever moves last leads for 4 seconds |
+| **DAW Follow** | DAW drives everything; Blender is a passive display |
+| **Blender Assist** | You mostly work in the DAW but want to scrub Blender when the DAW is stopped |
+| **Auto Master** | Equal collaboration; whoever moves last leads for a few seconds |
 
 ---
 
 ## Verify it works
 
-1. Press Play in FL Studio → Blender timeline should start moving
-2. Drag FL's transport cursor → Blender should follow
-3. Stop FL → scrub Blender's playhead → FL cursor should move (Assist/Auto modes)
+1. Press Play in your DAW → Blender's timeline should start moving
+2. Drag your DAW's transport cursor → Blender should follow
+3. Stop the DAW → scrub Blender's playhead → the DAW cursor should move (Assist/Auto modes)
 
 ---
 
 ## Auto-connect on startup
 
-Once you connect successfully, port names are saved in Addon Preferences.  
+Once you connect successfully, port names are saved in Addon Preferences.
 On next Blender start (or file load), ports are automatically reconnected if loopMIDI is running.
 
 To disable: **Edit → Preferences → Add-ons → ScoreSync → uncheck Auto-connect on startup**

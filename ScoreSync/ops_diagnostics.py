@@ -94,8 +94,8 @@ class SCORESYNC_OT_apply_preset(bpy.types.Operator):
     preset: bpy.props.EnumProperty(
         name="Preset",
         items=[
-            ("FL_FOLLOW",      "FL Follow",      "FL Studio drives everything; Blender follows"),
-            ("BLENDER_ASSIST", "Blender Assist", "Auto mode; scrubbing Blender nudges FL when stopped"),
+            ("FL_FOLLOW",      "DAW Follow",     "DAW drives everything; Blender follows"),
+            ("BLENDER_ASSIST", "Blender Assist", "Auto mode; scrubbing Blender nudges the DAW when stopped"),
             ("AUTO_MASTER",    "Auto Master",    "Auto mode with longer hold and faster scrub rate"),
         ],
         default="BLENDER_ASSIST",
@@ -256,12 +256,12 @@ class SCORESYNC_OT_export_fl_script(bpy.types.Operator):
 
 
 class SCORESYNC_OT_hardware_mode_apply(bpy.types.Operator):
-    """Apply Hardware Mode defaults: FL=master, duplex off, manual BPM on, hide FL UI."""
+    """Apply Hardware Mode defaults: DAW=master, duplex off, manual BPM on."""
     bl_idname = "scoresync.hardware_mode_apply"
     bl_label  = "Apply Hardware Mode"
     bl_description = (
-        "Switch to Hardware Mode: master=FL, duplex=Off, manual BPM enabled. "
-        "Hides FL-specific UI elements (Export FL Script, Check FL Script, health indicator)."
+        "Switch to Hardware Mode: DAW is master, duplex Off, manual BPM enabled. "
+        "Hides DAW-specific UI elements (script export, health check)."
     )
 
     def execute(self, context):
@@ -272,16 +272,16 @@ class SCORESYNC_OT_hardware_mode_apply(bpy.types.Operator):
         scene.scoresync_use_manual_bpm  = True
         if scene.scoresync_manual_bpm < 20.0:
             scene.scoresync_manual_bpm  = 120.0
-        self.report({'INFO'}, "Hardware Mode applied — FL is master, duplex off, manual BPM on")
+        self.report({'INFO'}, "Hardware Mode applied — DAW is master, duplex off, manual BPM on")
         print("[ScoreSync] Hardware Mode applied")
         return {'FINISHED'}
 
 
 class SCORESYNC_OT_fl_mode_apply(bpy.types.Operator):
-    """Restore FL Studio Mode (undo Hardware Mode)."""
+    """Restore DAW Mode (undo Hardware Mode)."""
     bl_idname = "scoresync.fl_mode_apply"
-    bl_label  = "Apply FL Studio Mode"
-    bl_description = "Show FL-specific UI and restore Auto master mode"
+    bl_label  = "Apply DAW Mode"
+    bl_description = "Show DAW-specific UI and restore Auto master mode"
 
     def execute(self, context):
         scene = context.scene
@@ -289,5 +289,5 @@ class SCORESYNC_OT_fl_mode_apply(bpy.types.Operator):
         scene.scoresync_master_mode    = "AUTO"
         scene.scoresync_duplex_mode    = "ASSIST"
         scene.scoresync_use_manual_bpm = False
-        self.report({'INFO'}, "FL Studio Mode restored")
+        self.report({'INFO'}, "DAW Mode restored")
         return {'FINISHED'}

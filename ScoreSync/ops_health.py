@@ -3,8 +3,8 @@ from .ops_connection import _get_mido, DEV
 
 class SCORESYNC_OT_check_fl_script(bpy.types.Operator):
     bl_idname = "scoresync.check_fl_script"
-    bl_label = "Check FL Script"
-    bl_description = "Send a probe to FL; script should echo back (CC#119)"
+    bl_label = "Check DAW Script"
+    bl_description = "Send a probe to the DAW script; it should echo back (CC#119) — FL Studio only"
 
     def execute(self, context):
         scene = context.scene
@@ -23,5 +23,5 @@ class SCORESYNC_OT_check_fl_script(bpy.types.Operator):
             self.report({'WARNING'}, "Failed to send probe on MIDI Out")
             return {'CANCELLED'}
 
-        self.report({'INFO'}, "Probe sent. If FL script is active and Output is enabled, it will echo back.")
+        self.report({'INFO'}, "Probe sent — waiting for DAW script echo (CC#119=100)")
         return {'FINISHED'}
