@@ -60,6 +60,221 @@ class _MappingLearnState:
 DEV_MAP = _MappingLearnState()
 
 
+# ── Curated path library ──────────────────────────────────────────────────────
+# Used by the path picker operator. RNA scanner appends discovered paths after.
+
+_CURATED_PATHS = {
+    "OBJECT": [
+        ("location.x",                          "Location X"),
+        ("location.y",                          "Location Y"),
+        ("location.z",                          "Location Z"),
+        ("rotation_euler.x",                    "Rotation X (Euler)"),
+        ("rotation_euler.y",                    "Rotation Y (Euler)"),
+        ("rotation_euler.z",                    "Rotation Z (Euler)"),
+        ("scale.x",                             "Scale X"),
+        ("scale.y",                             "Scale Y"),
+        ("scale.z",                             "Scale Z"),
+        ("hide_viewport",                       "Hide in Viewport"),
+        ("hide_render",                         "Hide in Render"),
+        # Camera (when object.type == 'CAMERA')
+        ("data.angle",                          "Camera FOV"),
+        ("data.lens",                           "Camera Focal Length"),
+        ("data.clip_start",                     "Camera Clip Start"),
+        ("data.clip_end",                       "Camera Clip End"),
+        ("data.dof.focus_distance",             "DOF Focus Distance"),
+        ("data.dof.aperture_fstop",             "DOF F-Stop"),
+        # Light
+        ("data.energy",                         "Light Energy"),
+        ("data.spot_size",                      "Spot Size"),
+        ("data.spot_blend",                     "Spot Blend"),
+        ("data.shadow_soft_size",               "Shadow Soft Size"),
+        # Active material (Principled BSDF)
+        ("active_material.roughness",           "Active Mat Roughness"),
+        ("active_material.metallic",            "Active Mat Metallic"),
+        ("active_material.specular_intensity",  "Active Mat Specular"),
+        ("active_material.alpha",               "Active Mat Alpha"),
+    ],
+    "SCENE": [
+        ("frame_current",                       "Current Frame"),
+        ("frame_start",                         "Frame Start"),
+        ("frame_end",                           "Frame End"),
+        ("scoresync_manual_bpm",                "ScoreSync Manual BPM"),
+        ("render.resolution_x",                 "Render Width"),
+        ("render.resolution_y",                 "Render Height"),
+        ("render.resolution_percentage",        "Render Scale %"),
+        ("eevee.bloom_intensity",               "EEVEE Bloom Intensity"),
+        ("eevee.bloom_radius",                  "EEVEE Bloom Radius"),
+        ("eevee.bokeh_max_size",                "EEVEE Bokeh Size"),
+        ("eevee.use_bloom",                     "EEVEE Bloom On/Off"),
+        ("eevee.volumetric_start",              "EEVEE Vol Start"),
+        ("eevee.volumetric_end",                "EEVEE Vol End"),
+        ("eevee.volumetric_tile_size",          "EEVEE Vol Tile Size"),
+        ("world.node_tree.nodes['Background'].inputs[1].default_value",
+                                                "World Strength"),
+    ],
+    "MATERIAL": [
+        ("roughness",                           "Roughness"),
+        ("metallic",                            "Metallic"),
+        ("specular_intensity",                  "Specular"),
+        ("alpha",                               "Alpha"),
+        ("node_tree.nodes['Principled BSDF'].inputs[7].default_value",
+                                                "Principled Roughness"),
+        ("node_tree.nodes['Principled BSDF'].inputs[6].default_value",
+                                                "Principled Metallic"),
+        ("node_tree.nodes['Principled BSDF'].inputs[19].default_value",
+                                                "Principled Alpha"),
+        ("node_tree.nodes['Principled BSDF'].inputs[0].default_value[0]",
+                                                "Principled Base R"),
+        ("node_tree.nodes['Principled BSDF'].inputs[0].default_value[1]",
+                                                "Principled Base G"),
+        ("node_tree.nodes['Principled BSDF'].inputs[0].default_value[2]",
+                                                "Principled Base B"),
+    ],
+    "WORLD": [
+        ("node_tree.nodes['Background'].inputs[1].default_value",
+                                                "World Strength"),
+        ("node_tree.nodes['Background'].inputs[0].default_value[0]",
+                                                "World Color R"),
+        ("node_tree.nodes['Background'].inputs[0].default_value[1]",
+                                                "World Color G"),
+        ("node_tree.nodes['Background'].inputs[0].default_value[2]",
+                                                "World Color B"),
+    ],
+}
+
+
+def _scan_rna_paths_for_block(block):
+    """
+    Walk RNA of a datablock to collect scalar float/int/bool paths.
+    Returns [(path, label), ...].  Limited to depth 2 to stay fast.
+    """
+    results = []
+    seen    = set()
+
+    def _walk(obj, prefix, depth):
+        if depth > 2 or obj is None:
+            return
+        try:
+            rna_props = obj.bl_rna.properties
+        except Exception:
+            return
+        for prop in rna_props:
+            ident = prop.identifier
+            if ident.startswith("_") or ident in ("rna_type", "bl_rna"):
+                continue
+            path = f"{prefix}.{ident}" if prefix else ident
+            if path in seen:
+                continue
+            ptype = prop.type
+            if ptype in ("FLOAT", "INT", "BOOLEAN"):
+                is_arr = getattr(prop, "is_array", False)
+                arr_len = getattr(prop, "array_length", 1)
+                if not is_arr or arr_len == 0:
+                    seen.add(path)
+                    results.append((path, prop.name or ident))
+                elif arr_len <= 4:
+                    for i, c in enumerate(["X", "Y", "Z", "W"][:arr_len]):
+                        sp = f"{path}[{i}]"
+                        if sp not in seen:
+                            seen.add(sp)
+                            results.append((sp, f"{prop.name or ident} {c}"))
+            elif ptype == "POINTER" and depth < 2:
+                try:
+                    sub = getattr(obj, ident, None)
+                    if sub is not None and hasattr(sub, "bl_rna"):
+                        _walk(sub, path, depth + 1)
+                except Exception:
+                    pass
+
+    _walk(block, "", 0)
+    return results
+
+
+def _build_path_enum_items(id_type: str, block):
+    """
+    Combine curated paths with live RNA scan for the given block.
+    Returns list of (identifier, name, description) ready for EnumProperty.
+    """
+    seen  = set()
+    items = []
+
+    def _add(path, label, cat):
+        if path not in seen:
+            seen.add(path)
+            items.append((path, label, f"[{cat}]  {path}"))
+
+    for path, label in _CURATED_PATHS.get(id_type, []):
+        _add(path, label, "Common")
+
+    if block is not None:
+        for path, label in _scan_rna_paths_for_block(block):
+            _add(path, label, "Scanned")
+
+    return items or [("location.x", "Location X", "location.x")]
+
+
+# Module-level cache populated at operator invoke time so the EnumProperty
+# callback always returns a stable list for the current popup session.
+_path_enum_cache: list = [("location.x", "Location X", "location.x")]
+
+
+def _path_enum_items(self, context):
+    return _path_enum_cache
+
+
+# ── Path picker operator ─────────────────────────────────────────────────────
+
+class SCORESYNC_OT_pick_data_path(bpy.types.Operator):
+    """Browse all available RNA paths for the selected datablock type"""
+    bl_idname   = "scoresync.pick_data_path"
+    bl_label    = "Pick Data Path"
+    bl_options  = {'REGISTER', 'UNDO'}
+    bl_property = "choice"
+
+    mapping_index: bpy.props.IntProperty(default=-1, options={'HIDDEN'})
+
+    choice: bpy.props.EnumProperty(
+        name="Path",
+        description="Select an RNA property path",
+        items=_path_enum_items,
+    )
+
+    def invoke(self, context, event):
+        global _path_enum_cache
+        scene    = context.scene
+        mappings = getattr(scene, "scoresync_mappings", None)
+        idx      = self.mapping_index
+        if mappings is None or idx < 0 or idx >= len(mappings):
+            self.report({'WARNING'}, "ScoreSync: no mapping selected")
+            return {'CANCELLED'}
+
+        m     = mappings[idx]
+        block = _resolve_datablock(m.id_type, m.id_name, context)
+        _path_enum_cache = _build_path_enum_items(m.id_type, block)
+
+        context.window_manager.invoke_search_popup(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        scene    = context.scene
+        mappings = getattr(scene, "scoresync_mappings", None)
+        idx      = self.mapping_index
+        if mappings is None or idx < 0 or idx >= len(mappings):
+            return {'CANCELLED'}
+
+        m           = mappings[idx]
+        m.data_path = self.choice
+
+        # Auto-fill label from chosen path name
+        for path, label, _ in _path_enum_cache:
+            if path == self.choice:
+                if not m.label or m.label.startswith("Mapping "):
+                    m.label = label
+                break
+
+        return {'FINISHED'}
+
+
 # ── Preset templates ──────────────────────────────────────────────────────────
 MAPPING_PRESETS = {
     "CAMERA": [
@@ -489,9 +704,23 @@ class SCORESYNC_OT_mapping_add(bpy.types.Operator):
     bl_label  = "Add Mapping"
 
     def execute(self, context):
-        m = context.scene.scoresync_mappings.add()
-        m.label = f"Mapping {len(context.scene.scoresync_mappings)}"
-        context.scene.scoresync_mapping_index = len(context.scene.scoresync_mappings) - 1
+        scene = context.scene
+        m     = scene.scoresync_mappings.add()
+        idx   = len(scene.scoresync_mappings) - 1
+
+        # Auto-populate from viewport selection
+        obj = getattr(context, "active_object", None)
+        if obj is not None:
+            m.id_type   = "OBJECT"
+            m.id_name   = obj.name
+            m.data_path = "location.x"
+            m.label     = f"{obj.name} Location X"
+            m.value_min = -10.0
+            m.value_max = 10.0
+        else:
+            m.label = f"Mapping {idx + 1}"
+
+        scene.scoresync_mapping_index = idx
         return {'FINISHED'}
 
 
@@ -667,6 +896,7 @@ mapping_classes = (
     SCORESYNC_OT_mapping_clear_binding,
     SCORESYNC_OT_mapping_assign,
     SCORESYNC_OT_mapping_select,
+    SCORESYNC_OT_pick_data_path,
     SCORESYNC_OT_mapping_add,
     SCORESYNC_OT_mapping_remove,
     SCORESYNC_OT_mapping_apply_preset,

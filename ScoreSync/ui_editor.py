@@ -449,7 +449,10 @@ def _draw_mapping_editor(layout, scene):
         box.label(text="Blender Target:", icon='OBJECT_DATA')
         box.prop(m, "id_type",   text="Type")
         box.prop(m, "id_name",   text="Datablock")
-        box.prop(m, "data_path", text="Path")
+        path_row = box.row(align=True)
+        path_row.prop(m, "data_path", text="Path")
+        pick_op = path_row.operator("scoresync.pick_data_path", text="", icon='VIEWZOOM')
+        pick_op.mapping_index = active_map_idx
 
         # Missing target warning
         if m.id_name:
