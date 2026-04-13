@@ -831,9 +831,15 @@ def _learn_scan_loop(port_name, gen):
     try:
         with mido.open_input(port_name) as inport:
             print(f"[ScoreSync] LearnScan opened: {port_name}")
-            for msg in inport:
-                if gen != _LEARN_SCAN_GEN:   # stale generation → exit and release port
-                    break
+            # Non-blocking poll so gen check fires every 20 ms even with no MIDI.
+            # The old blocking `for msg in inport:` pattern left stale threads alive
+            # forever when FL Studio held exclusive WinMM access — they never got a
+            # message, never checked gen, and their port handle blocked new threads.
+            while gen == _LEARN_SCAN_GEN:
+                msg = inport.receive(block=False)
+                if msg is None:
+                    time.sleep(0.02)
+                    continue
 
                 # Fresh module lookup — survives addon reloads
                 _m_map  = _sys.modules.get(f"{_PKG}.ops_mapping")
