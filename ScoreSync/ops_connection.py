@@ -648,14 +648,26 @@ def _listener_loop(port_name, gen):
         _enqueue({"type":"error","err":"mido not available"})
         return
 
-    # Cache module-level callables once per thread (avoids re-import on every message)
+    # Cache module-level callables once per thread.
+    # Each import is isolated so a failure in one module doesn't silence the others.
     try:
         from .ops_mapping import ingest_midi_for_mapping as _ingest_mapping
+    except Exception as _e:
+        print(f"[ScoreSync] listener: ops_mapping import failed: {_e}")
+        _ingest_mapping = None
+    try:
         from .ops_fx import capture_fx_learn as _capture_fx
+    except Exception:
+        _capture_fx = None
+    try:
         from .ops_sampler import sampler_pad_learn_capture as _capture_pad
+    except Exception as _e:
+        print(f"[ScoreSync] listener: ops_sampler import failed: {_e}")
+        _capture_pad = None
+    try:
         from .ops_transport import transport_learn_capture as _capture_transport
     except Exception:
-        _ingest_mapping = _capture_fx = _capture_pad = _capture_transport = None
+        _capture_transport = None
 
     try:
         DEV.listener_running = True
@@ -822,11 +834,22 @@ def _learn_scan_loop(port_name, gen):
 
     try:
         from .ops_mapping import ingest_midi_for_mapping as _ingest_mapping
+    except Exception as _e:
+        print(f"[ScoreSync] LearnScan: ops_mapping import failed: {_e}")
+        _ingest_mapping = None
+    try:
         from .ops_fx import capture_fx_learn as _capture_fx
+    except Exception:
+        _capture_fx = None
+    try:
         from .ops_sampler import sampler_pad_learn_capture as _capture_pad
+    except Exception as _e:
+        print(f"[ScoreSync] LearnScan: ops_sampler import failed: {_e}")
+        _capture_pad = None
+    try:
         from .ops_transport import transport_learn_capture as _capture_transport
     except Exception:
-        _ingest_mapping = _capture_fx = _capture_pad = _capture_transport = None
+        _capture_transport = None
 
     try:
         with mido.open_input(port_name) as inport:
@@ -844,6 +867,7 @@ def _learn_scan_loop(port_name, gen):
                             _capture_transport("CC", msg.channel, msg.control, msg.value)
 
                     elif msg.type == "note_on" and msg.velocity > 0:
+                        print(f"[ScoreSync] LearnScan NOTE_ON ch{msg.channel+1} note{msg.note} vel{msg.velocity} port={port_name}")
                         if _ingest_mapping:
                             _ingest_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
                         if _capture_fx:
