@@ -322,12 +322,76 @@ def _draw_context_menu(self, context):
             item.target = target_id
 
 
+# ── Timeline scrub-learn operator (no menu injection) ─────────────────────────
+# Kept registered so existing mappings and internal calls still resolve.
+# Access via the MIDI Mapping panel → use the TRANSPORT preset instead of
+# this operator — the preset already contains a Scrub Frame entry.
+
+class SCORESYNC_OT_context_learn_scrub(bpy.types.Operator):
+    """Add a frame_current mapping pre-set for rotary encoder scrubbing"""
+    bl_idname  = "scoresync.context_learn_scrub"
+    bl_label   = "ScoreSync: Learn MIDI Scrub (Encoder/Knob)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    frame_end: bpy.props.IntProperty(
+        name="Frame End",
+        description="Upper range for the scrub mapping",
+        default=500,
+        min=1,
+    )
+
+    def invoke(self, context, event):
+        self.frame_end = max(1, context.scene.frame_end)
+        return self.execute(context)
+
+    def execute(self, context):
+        from .ops_mapping import DEV_MAP
+
+        scene    = context.scene
+        mappings = getattr(scene, "scoresync_mappings", None)
+        if mappings is None:
+            self.report({'ERROR'}, "ScoreSync not ready — connect first")
+            return {'CANCELLED'}
+
+        m              = mappings.add()
+        m.label        = "Scrub Frame"
+        m.id_type      = "SCENE"
+        m.id_name      = "__SCENE__"
+        m.data_path    = "frame_current"
+        m.value_min    = float(scene.frame_start)
+        m.value_max    = float(self.frame_end)
+        m.midi_type    = "CC"
+        m.encoder_mode = "RELATIVE"
+        m.encoder_step = 8.0
+        m.enabled      = True
+
+        idx = len(mappings) - 1
+        scene.scoresync_mapping_index = idx
+
+        DEV_MAP.learning      = True
+        DEV_MAP.capture_dirty = False
+        DEV_MAP.target_idx    = idx
+        scene.scoresync_mapping_learn_status = (
+            "Listening… turn any rotary encoder to bind → Scrub Frame"
+        )
+
+        try:
+            from .ops_connection import start_learn_scan
+            start_learn_scan()
+        except Exception:
+            pass
+
+        self.report({'INFO'}, "ScoreSync: turn a knob/encoder to bind → Scrub Frame")
+        return {'FINISHED'}
+
+
 # ── Registration ──────────────────────────────────────────────────────────────
 
 context_classes = (
     SCORESYNC_OT_context_learn,
     SCORESYNC_OT_context_learn_pad,
     SCORESYNC_OT_context_learn_transport,
+    SCORESYNC_OT_context_learn_scrub,
 )
 
 
