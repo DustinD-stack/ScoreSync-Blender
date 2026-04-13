@@ -414,6 +414,10 @@ def apply_mappings_tick(scene) -> bool:
     global _bank_bindings_cache
     bindings = getattr(scene, "scoresync_bank_bindings", None)
     if bindings is not None:
+        # Lazy-init: ensure 4 slots always exist (can't do this in register_props
+        # because bpy.types.Scene there is a type object, not an instance)
+        while len(bindings) < 4:
+            bindings.add()
         _bank_bindings_cache = [
             (b.midi_type, b.channel, b.midi_num, i)
             for i, b in enumerate(bindings)

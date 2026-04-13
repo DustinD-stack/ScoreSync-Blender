@@ -323,10 +323,8 @@ def register_props():
     scene.scoresync_bank_learn_status = bpy.props.StringProperty(
         name="Bank Learn Status", default=""
     )
-    # Ensure 4 bank binding slots always exist
-    if len(scene.scoresync_bank_bindings) < 4:
-        while len(scene.scoresync_bank_bindings) < 4:
-            scene.scoresync_bank_bindings.add()
+    # Note: bank binding slots (4 items) are initialised lazily in apply_mappings_tick
+    # because bpy.types.Scene here is a type object, not an instance — len() would crash.
 
     # Visual Sampler (v2.0)
     scene.scoresync_banks = bpy.props.CollectionProperty(type=SamplerBank)

@@ -71,12 +71,12 @@ class SCORESYNC_OT_context_learn(bpy.types.Operator):
     bl_label   = "ScoreSync: Learn MIDI for This"
     bl_options = {'REGISTER', 'UNDO'}
 
-    _id_type  : bpy.props.StringProperty(options={'HIDDEN'})
-    _id_name  : bpy.props.StringProperty(options={'HIDDEN'})
-    _data_path: bpy.props.StringProperty(options={'HIDDEN'})
-    _label    : bpy.props.StringProperty(options={'HIDDEN'})
-    _vmin     : bpy.props.FloatProperty(options={'HIDDEN'})
-    _vmax     : bpy.props.FloatProperty(options={'HIDDEN'})
+    ctx_id_type  : bpy.props.StringProperty(options={'HIDDEN'})
+    ctx_id_name  : bpy.props.StringProperty(options={'HIDDEN'})
+    ctx_data_path: bpy.props.StringProperty(options={'HIDDEN'})
+    ctx_label    : bpy.props.StringProperty(options={'HIDDEN'})
+    ctx_vmin     : bpy.props.FloatProperty(options={'HIDDEN'})
+    ctx_vmax     : bpy.props.FloatProperty(options={'HIDDEN'})
 
     def invoke(self, context, event):
         ptr  = getattr(context, "button_pointer", None)
@@ -92,27 +92,27 @@ class SCORESYNC_OT_context_learn(bpy.types.Operator):
             return {'CANCELLED'}
 
         id_data, id_type = result
-        self._id_type = id_type
-        self._id_name = id_data.name
+        self.ctx_id_type = id_type
+        self.ctx_id_name = id_data.name
 
         try:
-            struct_path    = ptr.path_from_id()
-            pid            = prop.identifier
-            self._data_path = f"{struct_path}.{pid}" if struct_path else pid
+            struct_path       = ptr.path_from_id()
+            pid               = prop.identifier
+            self.ctx_data_path = f"{struct_path}.{pid}" if struct_path else pid
         except Exception:
-            self._data_path = prop.identifier
+            self.ctx_data_path = prop.identifier
 
-        self._label = prop.name or prop.identifier
+        self.ctx_label = prop.name or prop.identifier
 
         try:
-            self._vmin = float(getattr(prop, "soft_min", 0.0))
-            self._vmax = float(getattr(prop, "soft_max", 1.0))
-            if self._vmin <= -1e9:
-                self._vmin = 0.0
-            if self._vmax >= 1e9:
-                self._vmax = 1.0
+            self.ctx_vmin = float(getattr(prop, "soft_min", 0.0))
+            self.ctx_vmax = float(getattr(prop, "soft_max", 1.0))
+            if self.ctx_vmin <= -1e9:
+                self.ctx_vmin = 0.0
+            if self.ctx_vmax >= 1e9:
+                self.ctx_vmax = 1.0
         except Exception:
-            self._vmin, self._vmax = 0.0, 1.0
+            self.ctx_vmin, self.ctx_vmax = 0.0, 1.0
 
         return self.execute(context)
 
@@ -126,12 +126,12 @@ class SCORESYNC_OT_context_learn(bpy.types.Operator):
             return {'CANCELLED'}
 
         m           = mappings.add()
-        m.label     = self._label
-        m.id_type   = self._id_type
-        m.id_name   = self._id_name
-        m.data_path = self._data_path
-        m.value_min = self._vmin
-        m.value_max = self._vmax
+        m.label     = self.ctx_label
+        m.id_type   = self.ctx_id_type
+        m.id_name   = self.ctx_id_name
+        m.data_path = self.ctx_data_path
+        m.value_min = self.ctx_vmin
+        m.value_max = self.ctx_vmax
         m.enabled   = True
 
         idx = len(mappings) - 1
@@ -141,7 +141,7 @@ class SCORESYNC_OT_context_learn(bpy.types.Operator):
         DEV_MAP.capture_dirty = False
         DEV_MAP.target_idx    = idx
         scene.scoresync_mapping_learn_status = (
-            f"Listening… touch any MIDI control to bind → {self._label}"
+            f"Listening… touch any MIDI control to bind → {self.ctx_label}"
         )
 
         try:
@@ -150,7 +150,7 @@ class SCORESYNC_OT_context_learn(bpy.types.Operator):
         except Exception:
             pass
 
-        self.report({'INFO'}, f"ScoreSync: touch a control to bind → '{self._label}'")
+        self.report({'INFO'}, f"ScoreSync: touch a control to bind → '{self.ctx_label}'")
         return {'FINISHED'}
 
 
