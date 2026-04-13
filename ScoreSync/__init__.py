@@ -21,7 +21,6 @@ from .ops_context import (
     SCORESYNC_OT_context_learn,
     SCORESYNC_OT_context_learn_pad,
     SCORESYNC_OT_context_learn_transport,
-    SCORESYNC_OT_context_learn_scrub,
 )
 
 from .ui_vse import (
