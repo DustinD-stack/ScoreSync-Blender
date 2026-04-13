@@ -641,6 +641,11 @@ def scoresync_timer():
     return 0.10  # ~10 Hz
 
 # ---- Listener thread --------------------------------------------------------
+# Package name used for sys.modules lookups (avoids stale cached references
+# after Blender addon reloads — see _learn_scan_loop for full explanation).
+_PKG = __name__.rsplit(".", 1)[0]   # e.g. "ScoreSync"
+
+
 def _listener_loop(port_name, gen):
     """Background MIDI input thread. DO NOT touch bpy data directly here."""
     mido = _get_mido()
@@ -648,26 +653,7 @@ def _listener_loop(port_name, gen):
         _enqueue({"type":"error","err":"mido not available"})
         return
 
-    # Cache module-level callables once per thread.
-    # Each import is isolated so a failure in one module doesn't silence the others.
-    try:
-        from .ops_mapping import ingest_midi_for_mapping as _ingest_mapping
-    except Exception as _e:
-        print(f"[ScoreSync] listener: ops_mapping import failed: {_e}")
-        _ingest_mapping = None
-    try:
-        from .ops_fx import capture_fx_learn as _capture_fx
-    except Exception:
-        _capture_fx = None
-    try:
-        from .ops_sampler import sampler_pad_learn_capture as _capture_pad
-    except Exception as _e:
-        print(f"[ScoreSync] listener: ops_sampler import failed: {_e}")
-        _capture_pad = None
-    try:
-        from .ops_transport import transport_learn_capture as _capture_transport
-    except Exception:
-        _capture_transport = None
+    import sys as _sys
 
     try:
         DEV.listener_running = True
@@ -697,6 +683,12 @@ def _listener_loop(port_name, gen):
                 if DEV.stop_requested or gen != _LISTENER_GEN:
                     break
 
+                # Fresh module lookup each message — always uses current module state
+                # even after an addon reload that replaces module objects in sys.modules.
+                _m_map  = _sys.modules.get(f"{_PKG}.ops_mapping")
+                _m_fx   = _sys.modules.get(f"{_PKG}.ops_fx")
+                _m_samp = _sys.modules.get(f"{_PKG}.ops_sampler")
+                _m_tp   = _sys.modules.get(f"{_PKG}.ops_transport")
 
                 # ---- FL script health echo (ACK) ----
                 if msg.type == "control_change" and msg.control == 119 and msg.value == 100:
@@ -709,44 +701,30 @@ def _listener_loop(port_name, gen):
 
                 # ---- MIDI Mapping Layer + FX Rack (v2.0) ----
                 if msg.type == "control_change":
-                    if _ingest_mapping:
-                        try:
-                            _ingest_mapping("CC", msg.channel, msg.control, msg.value)
-                        except Exception:
-                            pass
-                    if _capture_fx:
-                        try:
-                            _capture_fx("CC", msg.channel, msg.control)
-                        except Exception:
-                            pass
-                    if _capture_transport:
-                        try:
-                            _capture_transport("CC", msg.channel, msg.control, msg.value)
-                        except Exception:
-                            pass
+                    if _m_map:
+                        try: _m_map.ingest_midi_for_mapping("CC", msg.channel, msg.control, msg.value)
+                        except Exception: pass
+                    if _m_fx:
+                        try: _m_fx.capture_fx_learn("CC", msg.channel, msg.control)
+                        except Exception: pass
+                    if _m_tp:
+                        try: _m_tp.transport_learn_capture("CC", msg.channel, msg.control, msg.value)
+                        except Exception: pass
 
                 elif msg.type == "note_on":
-                    if _ingest_mapping:
-                        try:
-                            _ingest_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
-                        except Exception:
-                            pass
-                    if _capture_fx:
-                        try:
-                            _capture_fx("NOTE_ON", msg.channel, msg.note)
-                        except Exception:
-                            pass
-                    if _capture_pad:
-                        try:
-                            _capture_pad("NOTE_ON", msg.channel, msg.note, msg.velocity)
-                        except Exception:
-                            pass
-                    if _capture_transport:
-                        try:
-                            _capture_transport("NOTE_ON", msg.channel, msg.note, msg.velocity)
-                        except Exception:
-                            pass
-                    # Enqueue for sampler + FX (must fire on main thread)
+                    if _m_map:
+                        try: _m_map.ingest_midi_for_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        except Exception: pass
+                    if _m_fx:
+                        try: _m_fx.capture_fx_learn("NOTE_ON", msg.channel, msg.note)
+                        except Exception: pass
+                    if _m_samp:
+                        try: _m_samp.sampler_pad_learn_capture("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        except Exception: pass
+                    if _m_tp:
+                        try: _m_tp.transport_learn_capture("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        except Exception: pass
+                    # Enqueue for sampler fire + FX (must run on main thread)
                     _enqueue({"type": "note_on", "channel": msg.channel,
                               "note": msg.note, "velocity": msg.velocity})
 
@@ -827,29 +805,28 @@ _scan_note_queue: collections.deque = collections.deque()
 
 
 def _learn_scan_loop(port_name, gen):
-    """Lightweight thread: feed CC / Note On into the learn functions only."""
+    """
+    Lightweight thread: feed CC / Note On into the learn capture functions.
+
+    WHY sys.modules lookup instead of cached imports
+    -------------------------------------------------
+    Caching `from .ops_mapping import ingest_midi_for_mapping` at thread-start
+    binds to the function object in the module that existed when the thread
+    launched.  After a Blender addon reload, Python replaces those module
+    objects in sys.modules with fresh ones — new DEV_MAP / DEV_PAD_LEARN /
+    DEV_TP instances.  Operators arm the NEW objects; cached thread functions
+    still point to the OLD objects.  DEV_PAD_LEARN.learning is True on the new
+    object, False on the old one → capture never fires.
+
+    Doing a dict lookup through sys.modules on every message costs one dict
+    get() call — negligible — but guarantees we always write to the same object
+    that the operators and timer are reading.
+    """
     mido = _get_mido()
     if not mido:
         return
 
-    try:
-        from .ops_mapping import ingest_midi_for_mapping as _ingest_mapping
-    except Exception as _e:
-        print(f"[ScoreSync] LearnScan: ops_mapping import failed: {_e}")
-        _ingest_mapping = None
-    try:
-        from .ops_fx import capture_fx_learn as _capture_fx
-    except Exception:
-        _capture_fx = None
-    try:
-        from .ops_sampler import sampler_pad_learn_capture as _capture_pad
-    except Exception as _e:
-        print(f"[ScoreSync] LearnScan: ops_sampler import failed: {_e}")
-        _capture_pad = None
-    try:
-        from .ops_transport import transport_learn_capture as _capture_transport
-    except Exception:
-        _capture_transport = None
+    import sys as _sys
 
     try:
         with mido.open_input(port_name) as inport:
@@ -857,43 +834,52 @@ def _learn_scan_loop(port_name, gen):
             for msg in inport:
                 if gen != _LEARN_SCAN_GEN:   # stale generation → exit and release port
                     break
+
+                # Fresh module lookup — survives addon reloads
+                _m_map  = _sys.modules.get(f"{_PKG}.ops_mapping")
+                _m_fx   = _sys.modules.get(f"{_PKG}.ops_fx")
+                _m_samp = _sys.modules.get(f"{_PKG}.ops_sampler")
+                _m_tp   = _sys.modules.get(f"{_PKG}.ops_transport")
+
                 try:
                     if msg.type == "control_change":
-                        if _ingest_mapping:
-                            _ingest_mapping("CC", msg.channel, msg.control, msg.value)
-                        if _capture_fx:
-                            _capture_fx("CC", msg.channel, msg.control)
-                        if _capture_transport:
-                            _capture_transport("CC", msg.channel, msg.control, msg.value)
+                        if _m_map:
+                            try: _m_map.ingest_midi_for_mapping("CC", msg.channel, msg.control, msg.value)
+                            except Exception: pass
+                        if _m_fx:
+                            try: _m_fx.capture_fx_learn("CC", msg.channel, msg.control)
+                            except Exception: pass
+                        if _m_tp:
+                            try: _m_tp.transport_learn_capture("CC", msg.channel, msg.control, msg.value)
+                            except Exception: pass
 
                     elif msg.type == "note_on" and msg.velocity > 0:
                         print(f"[ScoreSync] LearnScan NOTE_ON ch{msg.channel+1} note{msg.note} vel{msg.velocity} port={port_name}")
-                        if _ingest_mapping:
-                            _ingest_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
-                        if _capture_fx:
-                            _capture_fx("NOTE_ON", msg.channel, msg.note)
-                        if _capture_pad:
-                            _capture_pad("NOTE_ON", msg.channel, msg.note, msg.velocity)
-                        if _capture_transport:
-                            _capture_transport("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        if _m_map:
+                            try: _m_map.ingest_midi_for_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                            except Exception: pass
+                        if _m_fx:
+                            try: _m_fx.capture_fx_learn("NOTE_ON", msg.channel, msg.note)
+                            except Exception: pass
+                        if _m_samp:
+                            try: _m_samp.sampler_pad_learn_capture("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                            except Exception: pass
+                        if _m_tp:
+                            try: _m_tp.transport_learn_capture("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                            except Exception: pass
                         # Queue for sampler pad fire on main thread
                         _scan_note_queue.append((msg.channel, msg.note, msg.velocity))
-                        # Fire FX rack note triggers (TOGGLE / MOMENTARY / FLASH)
-                        try:
-                            from . import ops_fx as _ops_fx
-                            _ops_fx.handle_note_on_fx(msg.channel, msg.note, msg.velocity)
-                        except Exception:
-                            pass
+                        if _m_fx:
+                            try: _m_fx.handle_note_on_fx(msg.channel, msg.note, msg.velocity)
+                            except Exception: pass
 
                     elif msg.type in ("note_off",) or (msg.type == "note_on" and msg.velocity == 0):
-                        # Note Off — clear NOTE_ON value so momentary mappings release
-                        if _ingest_mapping:
-                            _ingest_mapping("NOTE_ON", msg.channel, msg.note, 0)
-                        try:
-                            from . import ops_fx as _ops_fx
-                            _ops_fx.handle_note_off_fx(msg.channel, msg.note)
-                        except Exception:
-                            pass
+                        if _m_map:
+                            try: _m_map.ingest_midi_for_mapping("NOTE_ON", msg.channel, msg.note, 0)
+                            except Exception: pass
+                        if _m_fx:
+                            try: _m_fx.handle_note_off_fx(msg.channel, msg.note)
+                            except Exception: pass
 
                 except Exception:
                     pass
