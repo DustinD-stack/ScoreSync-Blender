@@ -397,7 +397,7 @@ def _draw_mapping_editor(layout, scene):
     else:
         for i, m in enumerate(mappings):
             is_sel = (i == active_map_idx)
-            target_missing = m.id_name and not (
+            target_missing = bool(m.id_name) and not (
                 (m.id_type == "OBJECT"   and bpy.data.objects.get(m.id_name)) or
                 (m.id_type == "SCENE"    and bpy.data.scenes.get(m.id_name)) or
                 (m.id_type == "MATERIAL" and bpy.data.materials.get(m.id_name)) or
