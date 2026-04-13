@@ -91,6 +91,7 @@ from .ops_health import SCORESYNC_OT_check_fl_script
 from .prefs import ScoreSyncPreferences, get_prefs, get_last_ports
 
 from .ops_mapping import (                         # v2.0 MIDI Mapping Layer
+    BankSwitchBinding,
     ScoreSyncMapping,
     SCORESYNC_OT_mapping_learn_start,
     SCORESYNC_OT_mapping_learn_cancel,
@@ -103,6 +104,11 @@ from .ops_mapping import (                         # v2.0 MIDI Mapping Layer
     SCORESYNC_OT_mapping_apply_preset,
     SCORESYNC_OT_mapping_export,
     SCORESYNC_OT_mapping_import,
+    SCORESYNC_OT_switch_mapping_bank,
+    SCORESYNC_OT_bank_learn_start,
+    SCORESYNC_OT_bank_learn_cancel,
+    SCORESYNC_OT_bank_clear_binding,
+    ingest_midi_for_bank_switch,
     apply_mappings_tick,
     ingest_midi_for_mapping,
     mapping_classes,
@@ -308,6 +314,20 @@ def register_props():
         name="Learn Status", default=""
     )
 
+    # Mapping banks (v2.2)
+    scene.scoresync_active_mapping_bank = bpy.props.IntProperty(
+        name="Active Mapping Bank", default=0, min=0, max=3,
+        description="Active bank — only mappings in this bank respond to MIDI",
+    )
+    scene.scoresync_bank_bindings = bpy.props.CollectionProperty(type=BankSwitchBinding)
+    scene.scoresync_bank_learn_status = bpy.props.StringProperty(
+        name="Bank Learn Status", default=""
+    )
+    # Ensure 4 bank binding slots always exist
+    if len(scene.scoresync_bank_bindings) < 4:
+        while len(scene.scoresync_bank_bindings) < 4:
+            scene.scoresync_bank_bindings.add()
+
     # Visual Sampler (v2.0)
     scene.scoresync_banks = bpy.props.CollectionProperty(type=SamplerBank)
     scene.scoresync_active_bank = bpy.props.IntProperty(
@@ -384,6 +404,9 @@ def unregister_props():
         "scoresync_mappings",
         "scoresync_mapping_index",
         "scoresync_mapping_learn_status",
+        "scoresync_active_mapping_bank",
+        "scoresync_bank_bindings",
+        "scoresync_bank_learn_status",
         "scoresync_banks",
         "scoresync_active_bank",
         "scoresync_active_pad",
@@ -460,7 +483,8 @@ def _load_post_handler(filepath):
 # before the scene CollectionProperty declarations in register_props(), so they
 # are registered as a flat tuple first via the *_classes lists, then the rest.
 classes = (
-    # v2.0/2.1 PropertyGroups (must be first — used in CollectionProperty/PointerProperty)
+    # v2.0/2.1/2.2 PropertyGroups (must be first — used in CollectionProperty/PointerProperty)
+    BankSwitchBinding,        # v2.2 mapping bank switch bindings
     ScoreSyncMapping,
     SamplerPad,
     SamplerBank,
@@ -513,6 +537,11 @@ classes = (
     SCORESYNC_OT_mapping_apply_preset,
     SCORESYNC_OT_mapping_export,
     SCORESYNC_OT_mapping_import,
+    # v2.2 — Mapping banks
+    SCORESYNC_OT_switch_mapping_bank,
+    SCORESYNC_OT_bank_learn_start,
+    SCORESYNC_OT_bank_learn_cancel,
+    SCORESYNC_OT_bank_clear_binding,
 
     # v2.0 — Visual Sampler
     SCORESYNC_OT_sampler_add_bank,

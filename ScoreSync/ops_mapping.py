@@ -408,6 +408,41 @@ def apply_mappings_tick(scene) -> bool:
     """
     dirty = False
 
+    # ── Bank system ticks ──────────────────────────────────────────────────────
+
+    # Rebuild bank bindings cache (fast: runs on main thread, read by MIDI thread)
+    global _bank_bindings_cache
+    bindings = getattr(scene, "scoresync_bank_bindings", None)
+    if bindings is not None:
+        _bank_bindings_cache = [
+            (b.midi_type, b.channel, b.midi_num, i)
+            for i, b in enumerate(bindings)
+            if b.enabled
+        ]
+
+    # Consume bank learn capture
+    if DEV_BANK.capture_dirty:
+        DEV_BANK.capture_dirty = False
+        if bindings and 0 <= DEV_BANK.learn_target < len(bindings):
+            b            = bindings[DEV_BANK.learn_target]
+            b.midi_type  = DEV_BANK.pending_type
+            b.channel    = DEV_BANK.pending_ch
+            b.midi_num   = DEV_BANK.pending_num
+            b.enabled    = True
+            lbl          = BANK_LABELS[DEV_BANK.learn_target]
+            scene.scoresync_bank_learn_status = (
+                f"Bank {lbl} → {b.midi_type} ch{b.channel+1} #{b.midi_num}"
+            )
+            dirty = True
+
+    # Consume pending bank switch (queued by MIDI thread)
+    if DEV_BANK.pending_switch >= 0:
+        scene.scoresync_active_mapping_bank = DEV_BANK.pending_switch
+        DEV_BANK.pending_switch = -1
+        dirty = True
+
+    # ── Mapping learn capture ──────────────────────────────────────────────────
+
     # Auto-assign after learn capture
     if DEV_MAP.capture_dirty and DEV_MAP.pending_type:
         DEV_MAP.capture_dirty = False
@@ -434,8 +469,12 @@ def apply_mappings_tick(scene) -> bool:
     if not mappings:
         return dirty
 
+    active_bank = getattr(scene, "scoresync_active_mapping_bank", 0)
+
     for m in mappings:
         if not m.enabled:
+            continue
+        if getattr(m, "bank", 0) != active_bank:
             continue
 
         key = (m.midi_type, m.channel, m.midi_num)
@@ -629,6 +668,70 @@ class ScoreSyncMapping(bpy.types.PropertyGroup):
         default=1.0, min=0.1, max=100.0,
         subtype='PERCENTAGE',
     )
+    bank: bpy.props.IntProperty(
+        name="Bank",
+        description="Which mapping bank this slot belongs to (A=0, B=1, C=2, D=3)",
+        default=0, min=0, max=3,
+    )
+
+
+# ── Bank system ───────────────────────────────────────────────────────────────
+
+BANK_LABELS = ["A", "B", "C", "D"]
+BANK_ICONS  = ["EVENT_A", "EVENT_B", "EVENT_C", "EVENT_D"]
+
+class _BankState:
+    learning       = False
+    learn_target   = -1      # 0-3: bank slot being learned
+    capture_dirty  = False   # set by MIDI thread
+    pending_type   = ""
+    pending_ch     = 0
+    pending_num    = 0
+    pending_switch = -1      # bank to activate (consumed by timer on main thread)
+
+DEV_BANK = _BankState()
+
+# Thread-safe cache of active bank bindings — rebuilt each timer tick.
+# Format: [(midi_type, channel, num, bank_idx), ...]
+_bank_bindings_cache: list = []
+
+
+class BankSwitchBinding(bpy.types.PropertyGroup):
+    """MIDI binding that switches the active mapping bank."""
+    enabled  : bpy.props.BoolProperty(default=False)
+    midi_type: bpy.props.EnumProperty(
+        name="Type",
+        items=[("CC", "CC", ""), ("NOTE_ON", "Note", "")],
+        default="NOTE_ON",
+    )
+    channel  : bpy.props.IntProperty(name="Ch",  default=0, min=0, max=15)
+    midi_num : bpy.props.IntProperty(name="Num", default=0, min=0, max=127)
+
+
+def ingest_midi_for_bank_switch(midi_type: str, channel: int, num: int, val: int):
+    """
+    Called from listener threads (MIDI thread context).
+    Handles bank-learn capture and queues bank switches for the main thread.
+    Reads _bank_bindings_cache — a plain list, CPython-safe without locks.
+    """
+    # Learn capture
+    if DEV_BANK.learning:
+        if midi_type == "NOTE_ON" and val == 0:
+            return  # ignore note-off during learn
+        DEV_BANK.pending_type  = midi_type
+        DEV_BANK.pending_ch    = channel
+        DEV_BANK.pending_num   = num
+        DEV_BANK.capture_dirty = True
+        DEV_BANK.learning      = False
+        return
+
+    # Live bank-switch trigger
+    for (btype, bch, bnum, bidx) in _bank_bindings_cache:
+        if btype == midi_type and bch == channel and bnum == num:
+            if midi_type == "NOTE_ON" and val == 0:
+                continue  # ignore note-off for note-triggered bank switch
+            DEV_BANK.pending_switch = bidx
+            break
 
 
 # ── Operators ─────────────────────────────────────────────────────────────────
@@ -888,8 +991,68 @@ class SCORESYNC_OT_mapping_clear_binding(bpy.types.Operator):
         return {'FINISHED'}
 
 
+# ── Bank switch operators ─────────────────────────────────────────────────────
+
+class SCORESYNC_OT_switch_mapping_bank(bpy.types.Operator):
+    """Switch the active MIDI mapping bank"""
+    bl_idname = "scoresync.switch_mapping_bank"
+    bl_label  = "Switch Mapping Bank"
+    index: bpy.props.IntProperty(default=0, min=0, max=3)
+
+    def execute(self, context):
+        context.scene.scoresync_active_mapping_bank = self.index
+        return {'FINISHED'}
+
+
+class SCORESYNC_OT_bank_learn_start(bpy.types.Operator):
+    """Press a button or pad on your controller to bind it to this bank switch"""
+    bl_idname = "scoresync.bank_learn_start"
+    bl_label  = "Learn Bank Switch"
+    bank_index: bpy.props.IntProperty(default=0, min=0, max=3)
+
+    def execute(self, context):
+        DEV_BANK.learning      = True
+        DEV_BANK.learn_target  = self.bank_index
+        DEV_BANK.capture_dirty = False
+        context.scene.scoresync_bank_learn_status = (
+            f"Listening for Bank {BANK_LABELS[self.bank_index]}… press any button"
+        )
+        try:
+            from .ops_connection import start_learn_scan
+            start_learn_scan()
+        except Exception:
+            pass
+        self.report({'INFO'}, f"Bank learn: touch a button → Bank {BANK_LABELS[self.bank_index]}")
+        return {'FINISHED'}
+
+
+class SCORESYNC_OT_bank_learn_cancel(bpy.types.Operator):
+    """Cancel bank switch MIDI learn"""
+    bl_idname = "scoresync.bank_learn_cancel"
+    bl_label  = "Cancel Bank Learn"
+
+    def execute(self, context):
+        DEV_BANK.learning = False
+        context.scene.scoresync_bank_learn_status = ""
+        return {'FINISHED'}
+
+
+class SCORESYNC_OT_bank_clear_binding(bpy.types.Operator):
+    """Remove the MIDI binding for this bank switch"""
+    bl_idname  = "scoresync.bank_clear_binding"
+    bl_label   = "Clear Bank Binding"
+    bank_index : bpy.props.IntProperty(default=0, min=0, max=3)
+
+    def execute(self, context):
+        bindings = getattr(context.scene, "scoresync_bank_bindings", None)
+        if bindings and 0 <= self.bank_index < len(bindings):
+            bindings[self.bank_index].enabled = False
+        return {'FINISHED'}
+
+
 # ── Registration ──────────────────────────────────────────────────────────────
 mapping_classes = (
+    BankSwitchBinding,
     ScoreSyncMapping,
     SCORESYNC_OT_mapping_learn_start,
     SCORESYNC_OT_mapping_learn_cancel,
@@ -902,4 +1065,8 @@ mapping_classes = (
     SCORESYNC_OT_mapping_apply_preset,
     SCORESYNC_OT_mapping_export,
     SCORESYNC_OT_mapping_import,
+    SCORESYNC_OT_switch_mapping_bank,
+    SCORESYNC_OT_bank_learn_start,
+    SCORESYNC_OT_bank_learn_cancel,
+    SCORESYNC_OT_bank_clear_binding,
 )

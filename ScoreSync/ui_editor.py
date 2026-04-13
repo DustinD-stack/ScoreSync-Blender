@@ -355,7 +355,60 @@ def _draw_fx_editor(layout, scene):
 # ── MIDI Mapping draw (two-column) ────────────────────────────────────────────
 
 def _draw_mapping_editor(layout, scene):
-    from .ops_mapping import DEV_MAP, _midi_to_value
+    from .ops_mapping import DEV_MAP, DEV_BANK, BANK_LABELS, BANK_ICONS, _midi_to_value
+
+    # ── Bank selector bar ─────────────────────────────────────────────────────
+    active_bank = getattr(scene, "scoresync_active_mapping_bank", 0)
+    bank_row = layout.row(align=True)
+    bank_row.scale_y = 1.3
+    bank_row.label(text="Bank:", icon='DOCUMENTS')
+    for i, (lbl, icon) in enumerate(zip(BANK_LABELS, BANK_ICONS)):
+        op = bank_row.operator(
+            "scoresync.switch_mapping_bank",
+            text=lbl,
+            icon=icon,
+            depress=(i == active_bank),
+        )
+        op.index = i
+
+    # ── Bank MIDI bindings (collapsible) ──────────────────────────────────────
+    bank_box = layout.box()
+    bank_hdr = bank_box.row(align=True)
+    show_key = "scoresync_show_bank_bindings"
+    show = getattr(scene, show_key, False) if hasattr(scene, show_key) else False
+    # Use a simple prop toggle stored on window manager to avoid registering a scene prop
+    bank_hdr.label(text="MIDI Bank Switch Bindings", icon='LINKED')
+    bank_hdr.operator(
+        "scoresync.bank_learn_cancel" if DEV_BANK.learning else "scoresync.bank_learn_start",
+        text="Cancel" if DEV_BANK.learning else "",
+        icon='X' if DEV_BANK.learning else 'TRIA_DOWN',
+        emboss=False,
+    ).bank_index = 0
+
+    bindings = getattr(scene, "scoresync_bank_bindings", [])
+    if DEV_BANK.learning:
+        bank_box.alert = True
+        bank_box.label(
+            text=f"Listening for Bank {BANK_LABELS[DEV_BANK.learn_target]}… press any button",
+            icon='REC',
+        )
+    elif getattr(scene, "scoresync_bank_learn_status", ""):
+        bank_box.label(text=scene.scoresync_bank_learn_status, icon='CHECKMARK')
+
+    for i, b in enumerate(bindings):
+        br = bank_box.row(align=True)
+        icon = BANK_ICONS[i]
+        if b.enabled:
+            br.label(text=f"Bank {BANK_LABELS[i]}:", icon=icon)
+            br.label(text=f"{b.midi_type}  ch{b.channel+1}  #{b.midi_num}")
+            clr = br.operator("scoresync.bank_clear_binding", text="", icon='X', emboss=False)
+            clr.bank_index = i
+        else:
+            br.label(text=f"Bank {BANK_LABELS[i]}:", icon=icon)
+            learn_op = br.operator("scoresync.bank_learn_start", text="Bind MIDI", icon='REC')
+            learn_op.bank_index = i
+
+    layout.separator(factor=0.3)
 
     # ── Learn row ─────────────────────────────────────────────────────────────
     learn_row = layout.row(align=True)
@@ -395,7 +448,11 @@ def _draw_mapping_editor(layout, scene):
     if not mappings:
         left.label(text="No mappings yet — click Learn or a preset.", icon='INFO')
     else:
+        shown = 0
         for i, m in enumerate(mappings):
+            if getattr(m, "bank", 0) != active_bank:
+                continue  # only show current bank's mappings
+            shown += 1
             is_sel = (i == active_map_idx)
             target_missing = bool(m.id_name) and not (
                 (m.id_type == "OBJECT"   and bpy.data.objects.get(m.id_name)) or
@@ -417,6 +474,8 @@ def _draw_mapping_editor(layout, scene):
             op2.index = i
             op3 = row.operator("scoresync.mapping_remove", text="", icon='X')
             op3.index = i
+        if shown == 0:
+            left.label(text=f"No mappings in Bank {BANK_LABELS[active_bank]} — click Add.", icon='INFO')
 
     left.separator(factor=0.5)
     row = left.row(align=True)
@@ -430,6 +489,11 @@ def _draw_mapping_editor(layout, scene):
         box.label(text=f"Edit: {m.label}", icon='PROPERTIES')
         box.prop(m, "label",   text="Name")
         box.prop(m, "enabled", text="Enabled")
+
+        # Bank assignment (edit which bank this mapping lives in)
+        bank_row = box.row(align=True)
+        bank_row.label(text="Bank:", icon='DOCUMENTS')
+        bank_row.prop(m, "bank", text="A=0  B=1  C=2  D=3")
 
         box.separator(factor=0.4)
         hdr = box.row(align=True)

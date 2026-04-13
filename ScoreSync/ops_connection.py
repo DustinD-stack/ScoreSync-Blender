@@ -704,6 +704,8 @@ def _listener_loop(port_name, gen):
                     if _m_map:
                         try: _m_map.ingest_midi_for_mapping("CC", msg.channel, msg.control, msg.value)
                         except Exception: pass
+                        try: _m_map.ingest_midi_for_bank_switch("CC", msg.channel, msg.control, msg.value)
+                        except Exception: pass
                     if _m_fx:
                         try: _m_fx.capture_fx_learn("CC", msg.channel, msg.control)
                         except Exception: pass
@@ -714,6 +716,8 @@ def _listener_loop(port_name, gen):
                 elif msg.type == "note_on":
                     if _m_map:
                         try: _m_map.ingest_midi_for_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        except Exception: pass
+                        try: _m_map.ingest_midi_for_bank_switch("NOTE_ON", msg.channel, msg.note, msg.velocity)
                         except Exception: pass
                     if _m_fx:
                         try: _m_fx.capture_fx_learn("NOTE_ON", msg.channel, msg.note)
@@ -852,6 +856,8 @@ def _learn_scan_loop(port_name, gen):
                         if _m_map:
                             try: _m_map.ingest_midi_for_mapping("CC", msg.channel, msg.control, msg.value)
                             except Exception: pass
+                            try: _m_map.ingest_midi_for_bank_switch("CC", msg.channel, msg.control, msg.value)
+                            except Exception: pass
                         if _m_fx:
                             try: _m_fx.capture_fx_learn("CC", msg.channel, msg.control)
                             except Exception: pass
@@ -863,6 +869,8 @@ def _learn_scan_loop(port_name, gen):
                         print(f"[ScoreSync] LearnScan NOTE_ON ch{msg.channel+1} note{msg.note} vel{msg.velocity} port={port_name}")
                         if _m_map:
                             try: _m_map.ingest_midi_for_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                            except Exception: pass
+                            try: _m_map.ingest_midi_for_bank_switch("NOTE_ON", msg.channel, msg.note, msg.velocity)
                             except Exception: pass
                         if _m_fx:
                             try: _m_fx.capture_fx_learn("NOTE_ON", msg.channel, msg.note)
