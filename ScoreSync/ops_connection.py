@@ -707,6 +707,11 @@ def _listener_loop(port_name, gen):
                             _capture_fx("CC", msg.channel, msg.control)
                         except Exception:
                             pass
+                    if _capture_transport:
+                        try:
+                            _capture_transport("CC", msg.channel, msg.control, msg.value)
+                        except Exception:
+                            pass
 
                 elif msg.type == "note_on":
                     if _ingest_mapping:
@@ -717,6 +722,16 @@ def _listener_loop(port_name, gen):
                     if _capture_fx:
                         try:
                             _capture_fx("NOTE_ON", msg.channel, msg.note)
+                        except Exception:
+                            pass
+                    if _capture_pad:
+                        try:
+                            _capture_pad("NOTE_ON", msg.channel, msg.note, msg.velocity)
+                        except Exception:
+                            pass
+                    if _capture_transport:
+                        try:
+                            _capture_transport("NOTE_ON", msg.channel, msg.note, msg.velocity)
                         except Exception:
                             pass
                     # Enqueue for sampler + FX (must fire on main thread)
