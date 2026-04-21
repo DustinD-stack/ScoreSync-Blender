@@ -1,7 +1,7 @@
 bl_info = {
     "name": "ScoreSync",
     "author": "Dustin Douglas",
-    "version": (2, 0, 0),
+    "version": (2, 1, 0),
     "blender": (4, 2, 0),
     "location": "View3D / VSE / Node Editor > Sidebar > ScoreSync",
     "description": "DAW/hardware sync, MIDI mapping, visual sampler, and FX rack for live performance.",
@@ -46,6 +46,7 @@ from .ops_connection import (
     SCORESYNC_OT_refresh_ports,
     SCORESYNC_OT_connect,
     SCORESYNC_OT_reconnect_now,  # v0.2.2
+    SCORESYNC_OT_reset_scan,     # v2.1 — force-restart controller scan
     scoresync_timer,             # optional: for explicit unregister
 )
 
@@ -514,6 +515,7 @@ classes = (
     SCORESYNC_OT_jump_next_marker,
     SCORESYNC_OT_rename_markers_bar_beat,
     SCORESYNC_OT_reconnect_now,       # v0.2.2
+    SCORESYNC_OT_reset_scan,          # v2.1
     SCORESYNC_OT_set_duplex_mode,     # v0.3.0
     SCORESYNC_OT_check_fl_script,
     SCORESYNC_OT_export_fl_script,    # v0.3.2

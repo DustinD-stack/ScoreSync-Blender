@@ -378,12 +378,16 @@ def _draw_mapping_editor(layout, scene):
     show = getattr(scene, show_key, False) if hasattr(scene, show_key) else False
     # Use a simple prop toggle stored on window manager to avoid registering a scene prop
     bank_hdr.label(text="MIDI Bank Switch Bindings", icon='LINKED')
-    bank_hdr.operator(
-        "scoresync.bank_learn_cancel" if DEV_BANK.learning else "scoresync.bank_learn_start",
-        text="Cancel" if DEV_BANK.learning else "",
-        icon='X' if DEV_BANK.learning else 'TRIA_DOWN',
-        emboss=False,
-    ).bank_index = 0
+    if DEV_BANK.learning:
+        bank_hdr.operator(
+            "scoresync.bank_learn_cancel",
+            text="Cancel", icon='X', emboss=False,
+        )
+    else:
+        bank_hdr.operator(
+            "scoresync.bank_learn_start",
+            text="", icon='TRIA_DOWN', emboss=False,
+        ).bank_index = 0
 
     bindings = getattr(scene, "scoresync_bank_bindings", [])
     if DEV_BANK.learning:

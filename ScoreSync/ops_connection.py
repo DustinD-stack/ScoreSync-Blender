@@ -218,6 +218,8 @@ def _update_led(scene):
 
 def _ensure_ports(scene):
     """If Auto-reconnect is ON, try to reopen missing ports when they reappear."""
+    global _scan_last_restart_ts
+
     if not getattr(scene, "scoresync_autoreconnect", True):
         return
     mido = _get_mido()
@@ -240,6 +242,18 @@ def _ensure_ports(scene):
                 scene.scoresync_status = f"Auto-reconnect In: {DEV.in_port_name}"
             except Exception:
                 pass
+
+    # SCAN THREADS — restart if all died and autoreconnect is on
+    if (DEV.timer_registered
+            and _LEARN_SCAN_GEN > 0
+            and _scan_alive_count == 0
+            and (time.time() - _scan_last_restart_ts) > _SCAN_RESTART_INTERVAL):
+        _scan_last_restart_ts = time.time()
+        print("[ScoreSync] All scan threads dead — auto-restarting controller scan")
+        try:
+            start_learn_scan()
+        except Exception:
+            pass
 
     # OUTPUT
     if DEV.out_port_name and (DEV.out_port is None):
@@ -807,6 +821,18 @@ _learn_scan_threads: list = []
 # thread inside scoresync_timer.
 _scan_note_queue: collections.deque = collections.deque()
 
+# ---- Scan health tracking ---------------------------------------------------
+# _scan_alive_count: incremented when a scan thread opens its port,
+# decremented when it exits (normally or on exception).
+# Guarded only by the GIL — int inc/dec is atomic in CPython.
+_scan_alive_count: int = 0
+_scan_last_restart_ts: float = 0.0
+_SCAN_RESTART_INTERVAL: float = 5.0   # seconds between auto-restart attempts
+
+# Most-recently-received MIDI event from any scan port — shown in the UI.
+# Written by MIDI threads, read on main thread (GIL-safe for simple assignment).
+scan_last_rx: dict = {}   # {"type": "NOTE_ON"/"CC", "ch": int, "num": int, "val": int, "ts": float}
+
 
 def _learn_scan_loop(port_name, gen):
     """
@@ -826,12 +852,14 @@ def _learn_scan_loop(port_name, gen):
     get() call — negligible — but guarantees we always write to the same object
     that the operators and timer are reading.
     """
+    global _scan_alive_count
     mido = _get_mido()
     if not mido:
         return
 
     import sys as _sys
 
+    _scan_alive_count += 1
     try:
         with mido.open_input(port_name) as inport:
             print(f"[ScoreSync] LearnScan opened: {port_name}")
@@ -853,6 +881,12 @@ def _learn_scan_loop(port_name, gen):
 
                 try:
                     if msg.type == "control_change":
+                        scan_last_rx["type"] = "CC"
+                        scan_last_rx["ch"]   = msg.channel
+                        scan_last_rx["num"]  = msg.control
+                        scan_last_rx["val"]  = msg.value
+                        scan_last_rx["ts"]   = time.time()
+                        scan_last_rx["port"] = port_name
                         if _m_map:
                             try: _m_map.ingest_midi_for_mapping("CC", msg.channel, msg.control, msg.value)
                             except Exception: pass
@@ -866,6 +900,12 @@ def _learn_scan_loop(port_name, gen):
                             except Exception: pass
 
                     elif msg.type == "note_on" and msg.velocity > 0:
+                        scan_last_rx["type"] = "NOTE"
+                        scan_last_rx["ch"]   = msg.channel
+                        scan_last_rx["num"]  = msg.note
+                        scan_last_rx["val"]  = msg.velocity
+                        scan_last_rx["ts"]   = time.time()
+                        scan_last_rx["port"] = port_name
                         print(f"[ScoreSync] LearnScan NOTE_ON ch{msg.channel+1} note{msg.note} vel{msg.velocity} port={port_name}")
                         if _m_map:
                             try: _m_map.ingest_midi_for_mapping("NOTE_ON", msg.channel, msg.note, msg.velocity)
@@ -899,7 +939,10 @@ def _learn_scan_loop(port_name, gen):
                     pass
             print(f"[ScoreSync] LearnScan closed: {port_name}")
     except Exception as e:
-        print(f"[ScoreSync] LearnScan failed ({port_name}): {e}")
+        print(f"[ScoreSync] LearnScan disconnected ({port_name}): {e}")
+    finally:
+        _scan_alive_count -= 1
+        print(f"[ScoreSync] LearnScan thread exited: {port_name}  (alive={_scan_alive_count})")
 
 
 def start_learn_scan():
@@ -1130,4 +1173,23 @@ class SCORESYNC_OT_reconnect_now(bpy.types.Operator):
         DEV.listener_running = False
         self.report({'INFO'}, "Reconnecting…")
         bpy.ops.scoresync.connect()
+        return {'FINISHED'}
+
+
+class SCORESYNC_OT_reset_scan(bpy.types.Operator):
+    """Force-restart the MIDI controller scan — use this if your controller
+    was unplugged and auto-reconnect hasn't fired yet, or after a USB reset"""
+    bl_idname = "scoresync.reset_scan"
+    bl_label  = "Reset Controller Scan"
+
+    def execute(self, context):
+        global _scan_last_restart_ts
+        _scan_last_restart_ts = 0.0   # reset cooldown so _ensure_ports can fire immediately
+        try:
+            start_learn_scan()
+        except Exception as e:
+            self.report({'WARNING'}, f"Scan restart failed: {e}")
+            return {'CANCELLED'}
+        alive = _scan_alive_count
+        self.report({'INFO'}, f"Controller scan restarted ({alive} port(s) opening…)")
         return {'FINISHED'}

@@ -487,6 +487,31 @@ class SCORESYNC_PT_connection(bpy.types.Panel):
         row.prop(scene, "scoresync_latency_ms",    text="Latency (ms)")
         row.prop(scene, "scoresync_autoreconnect", text="Auto-reconnect")
 
+        # ── Direct controller status ─────────────────────────────────────────
+        layout.separator(factor=0.3)
+        from .ops_connection import _scan_alive_count, scan_last_rx
+        alive = _scan_alive_count
+        row = layout.row(align=True)
+        if alive > 0:
+            row.label(text=f"Controller: {alive} port(s) active", icon='LINKED')
+        else:
+            row.alert = True
+            row.label(text="Controller: no scan threads", icon='UNLINKED')
+        row.operator("scoresync.reset_scan", text="", icon='FILE_REFRESH')
+
+        # Last received MIDI event (live debug)
+        if scan_last_rx:
+            age = time.time() - scan_last_rx.get("ts", 0.0)
+            if age < 5.0:
+                t  = scan_last_rx.get("type", "?")
+                ch = scan_last_rx.get("ch", 0) + 1
+                n  = scan_last_rx.get("num", 0)
+                v  = scan_last_rx.get("val", 0)
+                layout.label(
+                    text=f"Last RX: {t} ch{ch} #{n} val{v}  ({age:.1f}s ago)",
+                    icon='DRIVER',
+                )
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # TRANSPORT
