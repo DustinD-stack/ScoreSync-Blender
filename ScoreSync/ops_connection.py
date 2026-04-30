@@ -747,10 +747,32 @@ def _listener_loop(port_name, gen):
                               "note": msg.note, "velocity": msg.velocity})
 
                 elif msg.type == "note_off":
+                    if _m_map:
+                        try: _m_map.ingest_midi_for_mapping("NOTE_OFF", msg.channel, msg.note, msg.velocity)
+                        except Exception: pass
                     _enqueue({"type": "note_off", "channel": msg.channel,
                               "note": msg.note})
 
+                elif msg.type == "pitchwheel":
+                    norm = int((msg.pitch + 8192) * 127 // 16383)
+                    if _m_map:
+                        try: _m_map.ingest_midi_for_mapping("PITCH_BEND", msg.channel, 0, norm)
+                        except Exception: pass
+
+                elif msg.type == "aftertouch":
+                    if _m_map:
+                        try: _m_map.ingest_midi_for_mapping("AFTERTOUCH", msg.channel, 0, msg.value)
+                        except Exception: pass
+
+                elif msg.type == "polytouch":
+                    if _m_map:
+                        try: _m_map.ingest_midi_for_mapping("POLY_AT", msg.channel, msg.note, msg.value)
+                        except Exception: pass
+
                 elif msg.type == "program_change":
+                    if _m_map:
+                        try: _m_map.ingest_midi_for_mapping("PROG_CHG", msg.channel, msg.program, msg.program)
+                        except Exception: pass
                     _enqueue({"type": "program_change", "channel": msg.channel,
                               "program": msg.program})
 
@@ -929,10 +951,60 @@ def _learn_scan_loop(port_name, gen):
 
                     elif msg.type in ("note_off",) or (msg.type == "note_on" and msg.velocity == 0):
                         if _m_map:
+                            try: _m_map.ingest_midi_for_mapping("NOTE_OFF", msg.channel, msg.note, 0)
+                            except Exception: pass
                             try: _m_map.ingest_midi_for_mapping("NOTE_ON", msg.channel, msg.note, 0)
                             except Exception: pass
                         if _m_fx:
                             try: _m_fx.handle_note_off_fx(msg.channel, msg.note)
+                            except Exception: pass
+
+                    elif msg.type == "pitchwheel":
+                        norm = int((msg.pitch + 8192) * 127 // 16383)
+                        scan_last_rx["type"] = "PITCHBEND"
+                        scan_last_rx["ch"]   = msg.channel
+                        scan_last_rx["num"]  = 0
+                        scan_last_rx["val"]  = norm
+                        scan_last_rx["ts"]   = time.time()
+                        scan_last_rx["port"] = port_name
+                        if _m_map:
+                            try: _m_map.ingest_midi_for_mapping("PITCH_BEND", msg.channel, 0, norm)
+                            except Exception: pass
+
+                    elif msg.type == "aftertouch":
+                        scan_last_rx["type"] = "AFTERTOUCH"
+                        scan_last_rx["ch"]   = msg.channel
+                        scan_last_rx["num"]  = 0
+                        scan_last_rx["val"]  = msg.value
+                        scan_last_rx["ts"]   = time.time()
+                        scan_last_rx["port"] = port_name
+                        if _m_map:
+                            try: _m_map.ingest_midi_for_mapping("AFTERTOUCH", msg.channel, 0, msg.value)
+                            except Exception: pass
+
+                    elif msg.type == "polytouch":
+                        scan_last_rx["type"] = "POLY_AT"
+                        scan_last_rx["ch"]   = msg.channel
+                        scan_last_rx["num"]  = msg.note
+                        scan_last_rx["val"]  = msg.value
+                        scan_last_rx["ts"]   = time.time()
+                        scan_last_rx["port"] = port_name
+                        if _m_map:
+                            try: _m_map.ingest_midi_for_mapping("POLY_AT", msg.channel, msg.note, msg.value)
+                            except Exception: pass
+
+                    elif msg.type == "program_change":
+                        scan_last_rx["type"] = "PROG_CHG"
+                        scan_last_rx["ch"]   = msg.channel
+                        scan_last_rx["num"]  = msg.program
+                        scan_last_rx["val"]  = msg.program
+                        scan_last_rx["ts"]   = time.time()
+                        scan_last_rx["port"] = port_name
+                        if _m_map:
+                            try: _m_map.ingest_midi_for_mapping("PROG_CHG", msg.channel, msg.program, msg.program)
+                            except Exception: pass
+                        if _m_tp:
+                            try: _m_tp.transport_learn_capture("PROG_CHG", msg.channel, msg.program, msg.program)
                             except Exception: pass
 
                 except Exception:

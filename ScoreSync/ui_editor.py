@@ -436,7 +436,11 @@ def _draw_mapping_editor(layout, scene):
     # ── Presets row ───────────────────────────────────────────────────────────
     top = layout.row(align=True)
     top.label(text="Presets:", icon='PRESET_NEW')
-    for pid, lbl in (("CAMERA", "Camera"), ("ACTIVE_OBJECT", "Object"), ("SCENE", "Scene")):
+    for pid, lbl in (
+        ("CAMERA", "Camera"), ("ACTIVE_OBJECT", "Object"), ("SCENE", "Scene"),
+        ("TRANSPORT_BUTTONS", "Transport"), ("KEYFRAME_TOOLS", "Keyframes"),
+        ("OPERATOR_TOOLS", "Operators"),
+    ):
         op = top.operator("scoresync.mapping_apply_preset", text=lbl)
         op.preset = pid
 
@@ -488,18 +492,26 @@ def _draw_mapping_editor(layout, scene):
     row.operator("scoresync.mapping_import", icon='IMPORT', text="Import")
 
     if mappings and active_map_idx < len(mappings):
-        m   = mappings[active_map_idx]
-        box = right.box()
+        m           = mappings[active_map_idx]
+        target_mode = getattr(m, "target_mode", "PROPERTY")
+        box         = right.box()
+
+        # Header: name + enabled
         box.label(text=f"Edit: {m.label}", icon='PROPERTIES')
         box.prop(m, "label",   text="Name")
         box.prop(m, "enabled", text="Enabled")
 
-        # Bank assignment (edit which bank this mapping lives in)
+        # Bank assignment
         bank_row = box.row(align=True)
         bank_row.label(text="Bank:", icon='DOCUMENTS')
         bank_row.prop(m, "bank", text="A=0  B=1  C=2  D=3")
 
+        # Target Mode
         box.separator(factor=0.4)
+        box.prop(m, "target_mode", text="Mode")
+
+        # ── MIDI Source (always shown) ────────────────────────────────────────
+        box.separator(factor=0.3)
         hdr = box.row(align=True)
         hdr.label(text="MIDI Source:", icon='DRIVER')
         op_clr = hdr.operator("scoresync.mapping_clear_binding",
@@ -513,42 +525,124 @@ def _draw_mapping_editor(layout, scene):
                           text="← Assign from Learn", icon='EYEDROPPER')
         op.index = active_map_idx
 
+        # ── Mode-specific fields ──────────────────────────────────────────────
         box.separator(factor=0.4)
-        box.label(text="Blender Target:", icon='OBJECT_DATA')
-        box.prop(m, "id_type",   text="Type")
-        box.prop(m, "id_name",   text="Datablock")
-        path_row = box.row(align=True)
-        path_row.prop(m, "data_path", text="Path")
-        pick_op = path_row.operator("scoresync.pick_data_path", text="", icon='VIEWZOOM')
-        pick_op.mapping_index = active_map_idx
 
-        # Missing target warning
-        if m.id_name:
-            exists = bool(
-                (m.id_type == "OBJECT"   and bpy.data.objects.get(m.id_name)) or
-                (m.id_type == "SCENE"    and bpy.data.scenes.get(m.id_name)) or
-                (m.id_type == "MATERIAL" and bpy.data.materials.get(m.id_name)) or
-                (m.id_type == "WORLD"    and bpy.data.worlds.get(m.id_name)) or
-                (m.id_type == "CAMERA"   and bpy.data.objects.get(m.id_name))
-            )
-            if not exists:
-                err = box.row()
-                err.alert = True
-                err.label(text=f'"{m.id_name}" not found in scene', icon='ERROR')
-
-        box.separator(factor=0.4)
-        row = box.row(align=True)
-        row.prop(m, "value_min", text="Min")
-        row.prop(m, "value_max", text="Max")
-
-        if m.enabled:
-            key = (m.midi_type, m.channel, m.midi_num)
-            raw = DEV_MAP.last_val.get(key)
-            if raw is not None:
-                box.label(
-                    text=f"Live: raw {raw}  →  {_midi_to_value(raw, m.value_min, m.value_max):.4f}",
-                    icon='DECORATE_ANIMATE',
+        if target_mode == "PROPERTY":
+            box.label(text="Blender Target:", icon='OBJECT_DATA')
+            box.prop(m, "id_type",  text="Type")
+            box.prop(m, "id_name",  text="Datablock")
+            path_row = box.row(align=True)
+            path_row.prop(m, "data_path", text="Path")
+            pick_op = path_row.operator("scoresync.pick_data_path", text="", icon='VIEWZOOM')
+            pick_op.mapping_index = active_map_idx
+            # Missing target warning
+            if m.id_name:
+                exists = bool(
+                    (m.id_type == "OBJECT"   and bpy.data.objects.get(m.id_name)) or
+                    (m.id_type == "SCENE"    and bpy.data.scenes.get(m.id_name)) or
+                    (m.id_type == "MATERIAL" and bpy.data.materials.get(m.id_name)) or
+                    (m.id_type == "WORLD"    and bpy.data.worlds.get(m.id_name)) or
+                    (m.id_type == "CAMERA"   and bpy.data.objects.get(m.id_name))
                 )
+                if not exists:
+                    err = box.row()
+                    err.alert = True
+                    err.label(text=f'"{m.id_name}" not found in scene', icon='ERROR')
+            box.separator(factor=0.3)
+            box.prop(m, "trigger_mode",  text="Trigger (Note)")
+            ec = box.row(align=True)
+            ec.prop(m, "encoder_mode",   text="CC Mode")
+            if getattr(m, "encoder_mode", "ABSOLUTE") == "RELATIVE":
+                ec.prop(m, "encoder_step", text="Step %")
+            box.separator(factor=0.3)
+            row = box.row(align=True)
+            row.prop(m, "value_min", text="Min")
+            row.prop(m, "value_max", text="Max")
+            # Live readout
+            if m.enabled:
+                key = (m.midi_type, m.channel, m.midi_num)
+                raw = DEV_MAP.last_val.get(key)
+                if raw is not None:
+                    box.label(
+                        text=f"Live: raw {raw}  →  {_midi_to_value(raw, m.value_min, m.value_max):.4f}",
+                        icon='DECORATE_ANIMATE',
+                    )
+
+        elif target_mode == "OPERATOR":
+            box.label(text="Operator:", icon='SCRIPT')
+            box.prop(m, "operator_idname",     text="ID")
+            box.prop(m, "operator_props_json", text="Props JSON")
+            box.separator(factor=0.3)
+            box.prop(m, "cc_threshold", text="CC Threshold")
+            box.prop(m, "fire_on",      text="Fire On")
+
+        elif target_mode == "FUNCTION":
+            from .ops_mapping import ACTION_REGISTRY_ITEMS
+            box.label(text="Built-in Function:", icon='SETTINGS')
+            box.prop(m, "function_id", text="ID")
+            # Quick-select buttons
+            fn_grid = box.column(align=True)
+            fn_grid.scale_y = 0.8
+            for fid, flabel, _ in ACTION_REGISTRY_ITEMS:
+                is_active = (m.function_id == fid)
+                op_fn = fn_grid.operator("scoresync.mapping_assign_function",
+                                         text=flabel, depress=is_active)
+                op_fn.mapping_index = active_map_idx
+                op_fn.function_id   = fid
+            box.prop(m, "function_args_json", text="Args JSON")
+            box.separator(factor=0.3)
+            box.prop(m, "fire_on", text="Fire On")
+
+        elif target_mode == "KEYFRAME":
+            box.label(text="Property to Keyframe:", icon='OBJECT_DATA')
+            box.prop(m, "id_type",  text="Type")
+            box.prop(m, "id_name",  text="Datablock")
+            path_row = box.row(align=True)
+            path_row.prop(m, "data_path", text="Path")
+            pick_op = path_row.operator("scoresync.pick_data_path", text="", icon='VIEWZOOM')
+            pick_op.mapping_index = active_map_idx
+            box.separator(factor=0.3)
+            box.prop(m, "keyframe_frame_mode", text="Frame")
+            box.prop(m, "keyframe_value_mode", text="Value")
+            if getattr(m, "keyframe_frame_mode", "CURRENT") == "MIDI_TO_FRAME":
+                row = box.row(align=True)
+                row.prop(m, "value_min", text="Frame Min")
+                row.prop(m, "value_max", text="Frame Max")
+            box.prop(m, "fire_on", text="Fire On")
+
+        elif target_mode == "TRANSPORT":
+            box.label(text="Transport Action:", icon='PLAY')
+            box.prop(m, "transport_action", text="")
+            box.separator(factor=0.3)
+            if getattr(m, "transport_action", "") == "SET_FRAME_FROM_CC":
+                row = box.row(align=True)
+                row.prop(m, "value_min", text="Frame Min")
+                row.prop(m, "value_max", text="Frame Max")
+            box.prop(m, "cc_threshold", text="CC Threshold")
+            box.prop(m, "fire_on",      text="Fire On")
+
+        # ── Developer custom Python (only shown when allow_custom_python is on) ─
+        allow_py = getattr(bpy.context.scene, "scoresync_allow_custom_python", False)
+        if allow_py:
+            box.separator(factor=0.3)
+            box.label(text="Custom Python (dev):", icon='CONSOLE')
+            box.prop(m, "custom_python", text="")
+
+        # ── Test Action button ────────────────────────────────────────────────
+        box.separator(factor=0.5)
+        test_row = box.row(align=True)
+        test_row.scale_y = 1.3
+        op_test = test_row.operator("scoresync.mapping_test_action",
+                                    text="Test Action", icon='PLAY')
+        op_test.index = active_map_idx
+
+        # ── Last error ────────────────────────────────────────────────────────
+        last_err = getattr(m, "last_error", "")
+        if last_err:
+            err_row = box.row()
+            err_row.alert = True
+            err_row.label(text=last_err, icon='ERROR')
     else:
         right.label(text="Select a mapping to edit.", icon='INFO')
 

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "ScoreSync",
     "author": "Dustin Douglas",
-    "version": (2, 1, 0),
+    "version": (2, 2, 0),
     "blender": (4, 2, 0),
     "location": "View3D / VSE / Node Editor > Sidebar > ScoreSync",
     "description": "DAW/hardware sync, MIDI mapping, visual sampler, and FX rack for live performance.",
@@ -103,6 +103,8 @@ from .ops_mapping import (                         # v2.0 MIDI Mapping Layer
     SCORESYNC_OT_mapping_add,
     SCORESYNC_OT_mapping_remove,
     SCORESYNC_OT_mapping_apply_preset,
+    SCORESYNC_OT_mapping_test_action,
+    SCORESYNC_OT_mapping_assign_function,
     SCORESYNC_OT_mapping_export,
     SCORESYNC_OT_mapping_import,
     SCORESYNC_OT_switch_mapping_bank,
@@ -324,6 +326,13 @@ def register_props():
     scene.scoresync_bank_learn_status = bpy.props.StringProperty(
         name="Bank Learn Status", default=""
     )
+    # Developer mode: allow custom Python snippets in mappings
+    scene.scoresync_allow_custom_python = bpy.props.BoolProperty(
+        name="Allow Custom Python in Mappings",
+        default=False,
+        description="Enable the custom_python field in MIDI mappings. Use only with trusted .blend files.",
+    )
+
     # Note: bank binding slots (4 items) are initialised lazily in apply_mappings_tick
     # because bpy.types.Scene here is a type object, not an instance — len() would crash.
 
@@ -406,6 +415,7 @@ def unregister_props():
         "scoresync_active_mapping_bank",
         "scoresync_bank_bindings",
         "scoresync_bank_learn_status",
+        "scoresync_allow_custom_python",
         "scoresync_banks",
         "scoresync_active_bank",
         "scoresync_active_pad",
@@ -535,6 +545,8 @@ classes = (
     SCORESYNC_OT_mapping_add,
     SCORESYNC_OT_mapping_remove,
     SCORESYNC_OT_mapping_apply_preset,
+    SCORESYNC_OT_mapping_test_action,
+    SCORESYNC_OT_mapping_assign_function,
     SCORESYNC_OT_mapping_export,
     SCORESYNC_OT_mapping_import,
     # v2.2 — Mapping banks
