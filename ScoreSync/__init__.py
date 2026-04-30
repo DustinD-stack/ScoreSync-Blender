@@ -1,7 +1,7 @@
 bl_info = {
     "name": "ScoreSync",
     "author": "Dustin Douglas",
-    "version": (2, 2, 0),
+    "version": (2, 2, 1),
     "blender": (4, 2, 0),
     "location": "View3D / VSE / Node Editor > Sidebar > ScoreSync",
     "description": "DAW/hardware sync, MIDI mapping, visual sampler, and FX rack for live performance.",

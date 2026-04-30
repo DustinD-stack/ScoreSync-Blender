@@ -151,9 +151,14 @@ def _duplex_tick():
         if changed:
             _LAST_FRAME = frame
             _LAST_CHANGE_TS = now
-            _SENDING = True  # actively scrubbing
-            if master_mode != "FL":
+            # Only claim master + stream if this frame change came from Blender, not FL.
+            # FL clock/SPP sets last_fl_spp_ts; a fresh timestamp means FL moved the frame.
+            fl_moved_frame = (now - DEV.last_fl_spp_ts) < 1.0
+            if not fl_moved_frame and master_mode != "FL":
+                _SENDING = True
                 _claim_blender_master(scene)
+            else:
+                _SENDING = False
 
             if use_mtc:
                 hh, mm, ss, ff = _frame_to_tc(frame, mtc_fps, _scene_fps(scene))

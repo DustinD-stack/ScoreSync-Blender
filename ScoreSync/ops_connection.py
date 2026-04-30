@@ -287,8 +287,13 @@ def _apply_incoming(scene, ts, msg):
             _dbg(scene, f"[ScoreSync APPLY] master=BLENDER — dropping incoming {t}")
             return True
         if master_mode == "AUTO" and _blender_is_master():
-            _dbg(scene, f"[ScoreSync APPLY] master=BLENDER(hold) — dropping incoming {t}")
-            return True
+            if t in ("start", "stop"):
+                # FL explicitly pressing transport — release Blender hold and let it through
+                DEV.master_until_ts = 0.0
+                _dbg(scene, f"[ScoreSync APPLY] FL {t} overrides Blender hold")
+            else:
+                _dbg(scene, f"[ScoreSync APPLY] master=BLENDER(hold) — dropping incoming {t}")
+                return True
 
     # Echo guard: ignore incoming transport/SPP for 350 ms after a button-press send.
     if t in ("start", "stop", "continue", "spp"):
@@ -431,8 +436,10 @@ def _apply_incoming(scene, ts, msg):
         if advance:
             DEV.frame_accum_f -= advance
             # -- IMPORTANT: accumulate
-            DEV.frame_origin += advance         
+            DEV.frame_origin += advance
             scene.frame_current = max(0, DEV.frame_origin)
+            # Tell duplex: FL clock moved this frame — don't claim Blender master
+            DEV.last_fl_spp_ts = time.time()
 
         DEV.clock_total += 1
         DEV.clocks_in_bar += 1
